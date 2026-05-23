@@ -347,8 +347,21 @@ function handleShoot(shooterId, msg) {
   // Apply accumulated damage (multiple pellets on one target = sum)
   for (const [hitId, totalDmg] of damageByTarget) {
     const target = players.get(hitId);
+    const preShield = target.shield;
+    const preHp = target.hp;
     applyDamage(target, totalDmg);
+    const shieldDmg = preShield - target.shield;
+    const hpDmg = preHp - target.hp;
     send(target.ws, { type: 'hp', hp: target.hp, shield: target.shield, fromZone: false });
+    // Damage feedback for the shooter (floating numbers)
+    send(shooter.ws, {
+      type: 'dmg',
+      amount: shieldDmg + hpDmg,
+      shieldDmg,
+      hpDmg,
+      targetId: hitId,
+      x: target.x, y: target.y, z: target.z,
+    });
     if (target.hp <= 0) killPlayer(hitId, shooterId);
   }
 }

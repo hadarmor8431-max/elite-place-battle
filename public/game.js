@@ -422,6 +422,65 @@ function spawnShotEffect(msg, isMine) {
   playGunshot(vol, w.pitch);
 }
 
+// ---------- DAMAGE NUMBERS ----------
+const damageNumbers = []; // {sprite, vx, vy, vz, life, max}
+
+function spawnDamageNumber(x, y, z, amount, shieldDmg, hpDmg) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.font = 'bold 44px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  // Color choice: blue=shield-only, red=HP-only, white=mixed, gold=big hit (>=100)
+  let color = '#ffffff';
+  if (amount >= 100) color = '#ffd66b';
+  else if (shieldDmg > 0 && hpDmg === 0) color = '#4fc3ff';
+  else if (hpDmg > 0 && shieldDmg === 0) color = '#ff6b6b';
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+  ctx.strokeText(String(amount), 64, 32);
+  ctx.fillStyle = color;
+  ctx.fillText(String(amount), 64, 32);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(2, 1, 1);
+  const ox = (Math.random() - 0.5) * 0.6;
+  const oz = (Math.random() - 0.5) * 0.6;
+  sprite.position.set(x + ox, y + 2.2, z + oz);
+  scene.add(sprite);
+  damageNumbers.push({
+    sprite,
+    vx: ox * 0.3,
+    vy: 1.6,
+    vz: oz * 0.3,
+    life: 1.0,
+    max: 1.0,
+  });
+}
+
+function updateDamageNumbers(dt) {
+  for (let i = damageNumbers.length - 1; i >= 0; i--) {
+    const d = damageNumbers[i];
+    d.life -= dt;
+    d.sprite.position.x += d.vx * dt;
+    d.sprite.position.y += d.vy * dt;
+    d.sprite.position.z += d.vz * dt;
+    d.vy -= 1.5 * dt; // gentle gravity
+    d.sprite.material.opacity = Math.max(0, Math.min(1, d.life / d.max));
+    if (d.life <= 0) {
+      scene.remove(d.sprite);
+      if (d.sprite.material.map) d.sprite.material.map.dispose();
+      d.sprite.material.dispose();
+      damageNumbers.splice(i, 1);
+    }
+  }
+}
+
 function spawnImpact(x, y, z) {
   // Bright core
   const coreGeom = new THREE.SphereGeometry(0.12, 8, 8);
@@ -577,6 +636,8 @@ function handleMsg(msg) {
     if (msg.fromZone) statusEl.textContent = 'Outside zone! Move in.';
   } else if (msg.type === 'pickup') {
     removePotion(msg.potionId);
+  } else if (msg.type === 'dmg') {
+    spawnDamageNumber(msg.x, msg.y, msg.z, msg.amount, msg.shieldDmg || 0, msg.hpDmg || 0);
   } else if (msg.type === 'shot') {
     spawnShotEffect(msg, msg.shooterId === me.id);
   } else if (msg.type === 'kill') {
@@ -907,6 +968,7 @@ function loop() {
   update(dt);
   interpolateOthers(dt);
   updateEffects(dt);
+  updateDamageNumbers(dt);
   animatePotions(clock.elapsedTime);
   drawMinimap();
   renderer.render(scene, camera);
