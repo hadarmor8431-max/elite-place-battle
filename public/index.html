@@ -20,11 +20,17 @@
       <p class="subtitle">Last one standing wins.</p>
       <input id="nameInput" maxlength="16" placeholder="Your name" />
       <button id="playBtn">PLAY</button>
-      <div class="howto">
+      <div class="howto desktopOnly">
         <div><b>WASD</b> move &nbsp; <b>Mouse</b> look &nbsp; <b>Left click</b> shoot</div>
         <div><b>1/2/3</b> switch weapon &nbsp; <b>Space</b> jump &nbsp; <b>Shift</b> sprint</div>
         <div><b>Esc</b> open menu &nbsp; Walk over blue potions for shield</div>
         <div>Stay inside the blue zone. It shrinks every 30 seconds.</div>
+      </div>
+      <div class="howto touchOnly">
+        <div><b>Left half</b>: drag joystick to move (full push = sprint)</div>
+        <div><b>Right half</b>: drag to look around</div>
+        <div><b>FIRE</b> + <b>JUMP</b> buttons &nbsp; Tap weapons to switch</div>
+        <div>Walk over blue potions for shield. Stay in the zone!</div>
       </div>
     </div>
   </div>
@@ -49,6 +55,13 @@
       <div class="weapon active" data-weapon="ar"><div class="wKey">1</div><div class="wName">AR</div><div class="wDmg">25</div></div>
       <div class="weapon" data-weapon="pump"><div class="wKey">2</div><div class="wName">PUMP</div><div class="wDmg">150</div></div>
       <div class="weapon" data-weapon="sniper"><div class="wKey">3</div><div class="wName">SNIPER</div><div class="wDmg">100</div></div>
+    </div>
+
+    <div id="touchControls">
+      <div id="joystickBase"><div id="joystickKnob"></div></div>
+      <button class="touchBtn" id="touchFire">FIRE</button>
+      <button class="touchBtn" id="touchJump">JUMP</button>
+      <button class="touchBtn small" id="touchPause">&#9776;</button>
     </div>
     <div id="minimap"><canvas id="minimapCanvas" width="160" height="160"></canvas></div>
     <div id="deathOverlay" class="hidden">

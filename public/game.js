@@ -276,6 +276,19 @@ const keys = {};
 let mouseDown = false;
 let pointerLocked = false;
 
+// Touch / mobile
+const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+if (isTouchDevice) document.body.classList.add('touch');
+
+const joystick = {
+  touchId: null,
+  startX: 0, startY: 0,
+  dx: 0, dy: 0,
+  radius: 60,
+};
+const look = { touchId: null, lastX: 0, lastY: 0 };
+let touchFiring = false;
+
 window.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'Space') e.preventDefault();
@@ -293,11 +306,13 @@ document.querySelectorAll('.weapon').forEach((el) => {
 });
 
 canvas.addEventListener('click', () => {
+  if (isTouchDevice) return;
   if (!me.alive) return;
   if (!pointerLocked) canvas.requestPointerLock();
 });
 
 document.addEventListener('pointerlockchange', () => {
+  if (isTouchDevice) return;
   pointerLocked = document.pointerLockElement === canvas;
   if (!pointerLocked && me.alive && gameState === 'playing' && lobby.classList.contains('hidden')) {
     openPauseMenu();
@@ -318,6 +333,115 @@ document.addEventListener('mousedown', (e) => {
   if (!pointerLocked || e.button !== 0 || menuOpen) return;
   fireShot();
 });
+
+// ---------- TOUCH HANDLERS ----------
+if (isTouchDevice) {
+  const joystickBase = document.getElementById('joystickBase');
+  const joystickKnob = document.getElementById('joystickKnob');
+  const fireBtn = document.getElementById('touchFire');
+  const jumpBtn = document.getElementById('touchJump');
+  const pauseBtn = document.getElementById('touchPause');
+
+  function setJoystickKnob(dx, dy) {
+    joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+  }
+
+  document.addEventListener('touchstart', (e) => {
+    if (lobby && !lobby.classList.contains('hidden')) return; // lobby uses normal taps
+    for (const t of e.changedTouches) {
+      // Ignore touches landing on touch buttons or UI elements
+      if (t.target && t.target.closest && t.target.closest('.touchBtn, .weapon, .menuBox, .menuOverlay, #lobby')) continue;
+      if (menuOpen) continue;
+      const halfW = window.innerWidth / 2;
+      if (t.clientX < halfW && joystick.touchId === null) {
+        joystick.touchId = t.identifier;
+        joystick.startX = t.clientX;
+        joystick.startY = t.clientY;
+        joystick.dx = 0; joystick.dy = 0;
+        joystickBase.style.left = `${t.clientX - 70}px`;
+        joystickBase.style.top = `${t.clientY - 70}px`;
+        joystickBase.style.display = 'block';
+        setJoystickKnob(0, 0);
+      } else if (t.clientX >= halfW && look.touchId === null) {
+        look.touchId = t.identifier;
+        look.lastX = t.clientX;
+        look.lastY = t.clientY;
+      }
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === joystick.touchId) {
+        let dx = t.clientX - joystick.startX;
+        let dy = t.clientY - joystick.startY;
+        const mag = Math.hypot(dx, dy);
+        if (mag > joystick.radius) {
+          dx = dx * joystick.radius / mag;
+          dy = dy * joystick.radius / mag;
+        }
+        joystick.dx = dx / joystick.radius;
+        joystick.dy = dy / joystick.radius;
+        setJoystickKnob(dx, dy);
+      } else if (t.identifier === look.touchId) {
+        const moveX = t.clientX - look.lastX;
+        const moveY = t.clientY - look.lastY;
+        look.lastX = t.clientX;
+        look.lastY = t.clientY;
+        const sens = 0.005 * settings.sensitivity;
+        me.rotY -= moveX * sens;
+        me.pitch += moveY * sens * (settings.invertY ? 1 : -1);
+        me.pitch = Math.max(-1.2, Math.min(1.2, me.pitch));
+      }
+    }
+  }, { passive: true });
+
+  function endTouch(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier === joystick.touchId) {
+        joystick.touchId = null;
+        joystick.dx = 0; joystick.dy = 0;
+        joystickBase.style.display = 'none';
+      } else if (t.identifier === look.touchId) {
+        look.touchId = null;
+      }
+    }
+  }
+  document.addEventListener('touchend', endTouch, { passive: true });
+  document.addEventListener('touchcancel', endTouch, { passive: true });
+
+  // Fire button: hold to fire continuously (cooldown limits rate)
+  fireBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    touchFiring = true;
+    ensureAudio();
+  });
+  fireBtn.addEventListener('touchend', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    touchFiring = false;
+  });
+  fireBtn.addEventListener('touchcancel', () => { touchFiring = false; });
+
+  jumpBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    keys['Space'] = true;
+    setTimeout(() => { keys['Space'] = false; }, 100);
+  });
+
+  pauseBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (menuOpen) closeMenus();
+    else openPauseMenu();
+  });
+
+  // Weapon buttons via touchstart (faster than click on mobile)
+  document.querySelectorAll('.weapon').forEach((el) => {
+    el.addEventListener('touchstart', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      selectWeapon(el.dataset.weapon);
+    });
+  });
+}
 
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -778,16 +902,31 @@ function update(dt) {
   const inputBlocked = menuOpen;
 
   // Movement input
-  const speed = (keys['ShiftLeft'] || keys['ShiftRight']) ? 10 : 6;
   let mx = 0, mz = 0;
+  let stickMag = 0;
   if (!inputBlocked) {
-    if (keys['KeyW']) mz -= 1;
-    if (keys['KeyS']) mz += 1;
-    if (keys['KeyA']) mx -= 1;
-    if (keys['KeyD']) mx += 1;
+    if (isTouchDevice && joystick.touchId !== null) {
+      mx = joystick.dx;
+      mz = joystick.dy;
+      stickMag = Math.hypot(mx, mz);
+    } else {
+      if (keys['KeyW']) mz -= 1;
+      if (keys['KeyS']) mz += 1;
+      if (keys['KeyA']) mx -= 1;
+      if (keys['KeyD']) mx += 1;
+      const klen = Math.hypot(mx, mz);
+      if (klen > 0) { mx /= klen; mz /= klen; }
+      stickMag = klen > 0 ? 1 : 0;
+    }
   }
-  const len = Math.hypot(mx, mz);
-  if (len > 0) { mx /= len; mz /= len; }
+  // Sprint: keyboard shift, or touch joystick pushed > 85%
+  const sprinting = (keys['ShiftLeft'] || keys['ShiftRight']) || (isTouchDevice && stickMag > 0.85);
+  const speed = sprinting ? 10 : 6;
+  // Normalize touch joystick magnitude (don't exceed 1)
+  if (stickMag > 1) { mx /= stickMag; mz /= stickMag; }
+
+  // Continuous fire while touch button is held
+  if (!inputBlocked && touchFiring) fireShot();
 
   // Rotate movement by player rotation
   const cos = Math.cos(me.rotY), sin = Math.sin(me.rotY);
@@ -1022,7 +1161,10 @@ function backToPause() {
 document.querySelectorAll('[data-act]').forEach((btn) => {
   btn.addEventListener('click', () => {
     const act = btn.dataset.act;
-    if (act === 'resume') canvas.requestPointerLock();
+    if (act === 'resume') {
+      if (isTouchDevice) closeMenus();
+      else canvas.requestPointerLock();
+    }
     else if (act === 'settings') openSettings();
     else if (act === 'back') backToPause();
     else if (act === 'reset') {
