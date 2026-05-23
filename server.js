@@ -1,11 +1,9 @@
 const express = require('express');
 const http = require('http');
 const path = require('path');
-const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 
 const PORT = process.env.PORT || 3000;
-const ROOM_CODE = process.env.ROOM_CODE || crypto.randomBytes(6).toString('hex');
 const TICK_RATE = 20;
 const MAX_HP = 100;
 const SHOT_DAMAGE = 25;
@@ -16,37 +14,10 @@ const ZONE_SHRINK_FACTOR = 0.6;
 const MIN_ZONE_RADIUS = 8;
 
 const app = express();
-
-// Access gate: / requires ?key=ROOM_CODE
-app.get('/', (req, res) => {
-  if (req.query.key !== ROOM_CODE) {
-    res.status(403).send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Elite Place Battle</title>
-<style>body{font-family:-apple-system,Segoe UI,sans-serif;background:#0a0e1a;color:#e8eef7;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}
-.box{background:#0f1628;border:1px solid #2a3a5e;padding:40px 48px;border-radius:14px;max-width:420px}
-h1{background:linear-gradient(90deg,#6bb7ff,#c084fc);-webkit-background-clip:text;background-clip:text;color:transparent;letter-spacing:3px;margin:0 0 12px}
-p{color:#8a9bb8;line-height:1.5;margin:0}</style></head>
-<body><div class="box"><h1>ELITE PLACE BATTLE</h1><p>This match is private. You need an invite link from your Discord server to join.</p></div></body></html>`);
-    return;
-  }
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+app.use(express.static(path.join(__dirname, 'public')));
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ noServer: true });
-
-server.on('upgrade', (req, socket, head) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  if (url.searchParams.get('key') !== ROOM_CODE) {
-    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-    socket.destroy();
-    return;
-  }
-  wss.handleUpgrade(req, socket, head, (ws) => {
-    wss.emit('connection', ws, req);
-  });
-});
+const wss = new WebSocketServer({ server });
 
 const players = new Map(); // id -> {ws, name, x,y,z, rotY, hp, alive, lastSeen}
 const obstacles = generateObstacles();
@@ -362,7 +333,4 @@ wss.on('connection', (ws) => {
 
 server.listen(PORT, () => {
   console.log(`Elite Place Battle listening on port ${PORT}`);
-  console.log(`Room code: ${ROOM_CODE}`);
-  console.log(`Local invite link: http://localhost:${PORT}/?key=${ROOM_CODE}`);
-  console.log(`On Render/Railway, share: https://<your-app-url>/?key=${ROOM_CODE}`);
 });

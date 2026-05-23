@@ -440,8 +440,7 @@ function collideAndMove(nx, nz) {
 // ---------- NETWORK ----------
 function connect() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const key = new URLSearchParams(location.search).get('key') || '';
-  ws = new WebSocket(`${proto}://${location.host}/?key=${encodeURIComponent(key)}`);
+  ws = new WebSocket(`${proto}://${location.host}`);
   ws.onopen = () => {
     connected = true;
     ws.send(JSON.stringify({ type: 'join', name: me.name }));
