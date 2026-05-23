@@ -279,8 +279,18 @@ let pointerLocked = false;
 window.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'Space') e.preventDefault();
+  if (e.code === 'Digit1') selectWeapon('ar');
+  else if (e.code === 'Digit2') selectWeapon('pump');
+  else if (e.code === 'Digit3') selectWeapon('sniper');
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+document.querySelectorAll('.weapon').forEach((el) => {
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectWeapon(el.dataset.weapon);
+  });
+});
 
 canvas.addEventListener('click', () => {
   if (!me.alive) return;
@@ -315,6 +325,23 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
 });
 
+// ---------- WEAPONS ----------
+const WEAPONS = {
+  ar:     { dmg: 25,  cooldown: 110,  color: 0xfff0a8, radius: 0.04, length: 0.9, speed: 220, flashSize: 0.35, flashColor: 0xffdd66, pitch: 1.0 },
+  pump:   { dmg: 150, cooldown: 800,  color: 0xff8855, radius: 0.07, length: 1.3, speed: 180, flashSize: 0.55, flashColor: 0xff7733, pitch: 0.65 },
+  sniper: { dmg: 100, cooldown: 1400, color: 0xc0eaff, radius: 0.03, length: 2.0, speed: 600, flashSize: 0.28, flashColor: 0xddffff, pitch: 1.35 },
+};
+let currentWeapon = 'ar';
+let lastShotTime = 0;
+
+function selectWeapon(name) {
+  if (!WEAPONS[name] || currentWeapon === name) return;
+  currentWeapon = name;
+  document.querySelectorAll('.weapon').forEach((el) => {
+    el.classList.toggle('active', el.dataset.weapon === name);
+  });
+}
+
 // ---------- SHOOTING ----------
 const bullets = [];  // {mesh, sx,sy,sz, ex,ey,ez, elapsed, duration}
 const flashes = [];  // {mesh, light, life, max}
@@ -322,18 +349,25 @@ const impacts = [];  // {mesh, life, max, growth}
 
 function fireShot() {
   ensureAudio();
+  const w = WEAPONS[currentWeapon];
+  const now = performance.now();
+  if (now - lastShotTime < w.cooldown) return;
+  lastShotTime = now;
   const origin = new THREE.Vector3();
   camera.getWorldPosition(origin);
   const dir = new THREE.Vector3();
   camera.getWorldDirection(dir);
   ws.send(JSON.stringify({
     type: 'shoot',
+    weapon: currentWeapon,
     ox: origin.x, oy: origin.y, oz: origin.z,
     dx: dir.x, dy: dir.y, dz: dir.z,
   }));
 }
 
 function spawnShotEffect(msg, isMine) {
+  const w = WEAPONS[msg.weapon] || WEAPONS.ar;
+
   // Shooter body + yaw -> gun position (right shoulder, slightly forward, chest height)
   const shSh = Math.sin(msg.srotY), shCh = Math.cos(msg.srotY);
   const fwdX = -shSh, fwdZ = -shCh;
@@ -347,10 +381,10 @@ function spawnShotEffect(msg, isMine) {
   const iy = msg.oy + msg.dy * msg.dist;
   const iz = msg.oz + msg.dz * msg.dist;
 
-  // Bullet streak
-  const bulletGeom = new THREE.CylinderGeometry(0.04, 0.04, 0.9, 6);
+  // Bullet streak (weapon-specific size and color)
+  const bulletGeom = new THREE.CylinderGeometry(w.radius, w.radius, w.length, 6);
   bulletGeom.rotateX(Math.PI / 2);
-  const bulletMat = new THREE.MeshBasicMaterial({ color: 0xfff0a8, transparent: true, opacity: 0.95 });
+  const bulletMat = new THREE.MeshBasicMaterial({ color: w.color, transparent: true, opacity: 0.95 });
   const bullet = new THREE.Mesh(bulletGeom, bulletMat);
   bullet.position.set(gunX, gunY, gunZ);
   bullet.lookAt(ix, iy, iz);
@@ -361,21 +395,21 @@ function spawnShotEffect(msg, isMine) {
     sx: gunX, sy: gunY, sz: gunZ,
     ex: ix, ey: iy, ez: iz,
     elapsed: 0,
-    duration: Math.max(0.03, totalDist / 220),
+    duration: Math.max(0.03, totalDist / w.speed),
   });
 
   // Muzzle flash sphere + brief point light
-  const flashGeom = new THREE.SphereGeometry(0.35, 8, 8);
-  const flashMat = new THREE.MeshBasicMaterial({ color: 0xffdd66, transparent: true, opacity: 1, depthWrite: false });
+  const flashGeom = new THREE.SphereGeometry(w.flashSize, 8, 8);
+  const flashMat = new THREE.MeshBasicMaterial({ color: w.flashColor, transparent: true, opacity: 1, depthWrite: false });
   const flashMesh = new THREE.Mesh(flashGeom, flashMat);
   flashMesh.position.set(gunX, gunY, gunZ);
   scene.add(flashMesh);
-  const flashLight = new THREE.PointLight(0xffcc66, 4, 8);
+  const flashLight = new THREE.PointLight(w.flashColor, 4, 8);
   flashLight.position.set(gunX, gunY, gunZ);
   scene.add(flashLight);
   flashes.push({ mesh: flashMesh, light: flashLight, life: 0.07, max: 0.07 });
 
-  // Audio with distance attenuation for other players
+  // Audio with distance attenuation for other players, weapon-specific pitch
   let vol = 1.0;
   if (!isMine) {
     const cam = new THREE.Vector3();
@@ -383,7 +417,7 @@ function spawnShotEffect(msg, isMine) {
     const d = Math.hypot(cam.x - gunX, cam.y - gunY, cam.z - gunZ);
     vol = Math.max(0.05, Math.min(0.7, 10 / (10 + d * 0.6)));
   }
-  playGunshot(vol);
+  playGunshot(vol, w.pitch);
 }
 
 function spawnImpact(x, y, z) {
@@ -422,7 +456,7 @@ function ensureAudio() {
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }
 
-function playGunshot(volume = 1.0) {
+function playGunshot(volume = 1.0, pitch = 1.0) {
   volume *= settings.volume;
   if (!audioCtx || volume <= 0.005) return;
   const now = audioCtx.currentTime;
@@ -440,7 +474,7 @@ function playGunshot(volume = 1.0) {
   noiseSrc.buffer = noiseBuf;
   const noiseFilter = audioCtx.createBiquadFilter();
   noiseFilter.type = 'bandpass';
-  noiseFilter.frequency.value = 1400;
+  noiseFilter.frequency.value = 1400 * pitch;
   noiseFilter.Q.value = 0.6;
   const noiseGain = audioCtx.createGain();
   noiseGain.gain.value = 0.55 * volume;
@@ -450,8 +484,8 @@ function playGunshot(volume = 1.0) {
   // Sub-bass thump
   const osc = audioCtx.createOscillator();
   osc.type = 'sine';
-  osc.frequency.setValueAtTime(160, now);
-  osc.frequency.exponentialRampToValueAtTime(45, now + 0.1);
+  osc.frequency.setValueAtTime(160 * pitch, now);
+  osc.frequency.exponentialRampToValueAtTime(45 * pitch, now + 0.1);
   const oscGain = audioCtx.createGain();
   oscGain.gain.setValueAtTime(0.55 * volume, now);
   oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
@@ -462,8 +496,8 @@ function playGunshot(volume = 1.0) {
   // High-frequency crack
   const crack = audioCtx.createOscillator();
   crack.type = 'sawtooth';
-  crack.frequency.setValueAtTime(2800, now);
-  crack.frequency.exponentialRampToValueAtTime(800, now + 0.04);
+  crack.frequency.setValueAtTime(2800 * pitch, now);
+  crack.frequency.exponentialRampToValueAtTime(800 * pitch, now + 0.04);
   const crackGain = audioCtx.createGain();
   crackGain.gain.setValueAtTime(0.18 * volume, now);
   crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);

@@ -6,7 +6,12 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 3000;
 const TICK_RATE = 20;
 const MAX_HP = 100;
-const SHOT_DAMAGE = 25;
+
+const WEAPONS = {
+  ar:     { dmg: 25,  cooldown: 110  },
+  pump:   { dmg: 150, cooldown: 800  },
+  sniper: { dmg: 100, cooldown: 1400 },
+};
 const MAP_SIZE = 200;
 const ZONE_DAMAGE_PER_SEC = 5;
 const ZONE_SHRINK_INTERVAL_MS = 30000;
@@ -272,12 +277,18 @@ function rayAABB(ox, oy, oz, dx, dy, dz, minX, minY, minZ, maxX, maxY, maxZ) {
 function handleShoot(shooterId, msg) {
   const shooter = players.get(shooterId);
   if (!shooter || !shooter.alive || gameState !== 'playing') return;
+  const wname = (msg.weapon && WEAPONS[msg.weapon]) ? msg.weapon : 'ar';
+  const w = WEAPONS[wname];
+  const now = Date.now();
+  // Allow 30ms grace for network jitter so client-locked cooldowns still pass
+  if (shooter.lastShot && now - shooter.lastShot < w.cooldown - 30) return;
+  shooter.lastShot = now;
   const { ox, oy, oz, dx, dy, dz } = msg;
   // Normalize direction
   const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
   const ndx = dx / len, ndy = dy / len, ndz = dz / len;
 
-  const maxRange = 100;
+  const maxRange = 200;
   let bestT = rayHitsObstacle(ox, oy, oz, ndx, ndy, ndz, maxRange);
   let hitId = null;
 
@@ -295,6 +306,7 @@ function handleShoot(shooterId, msg) {
   broadcast({
     type: 'shot',
     shooterId,
+    weapon: wname,
     ox, oy, oz,
     dx: ndx, dy: ndy, dz: ndz,
     dist: isFinite(bestT) ? bestT : maxRange,
@@ -304,7 +316,7 @@ function handleShoot(shooterId, msg) {
 
   if (hitId !== null) {
     const target = players.get(hitId);
-    applyDamage(target, SHOT_DAMAGE);
+    applyDamage(target, w.dmg);
     send(target.ws, { type: 'hp', hp: target.hp, shield: target.shield, fromZone: false });
     if (target.hp <= 0) killPlayer(hitId, shooterId);
   }
@@ -335,6 +347,7 @@ wss.on('connection', (ws) => {
     hp: MAX_HP,
     shield: 0,
     alive: false,
+    lastShot: 0,
   };
   players.set(id, p);
 

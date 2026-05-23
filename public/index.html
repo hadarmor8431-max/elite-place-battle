@@ -22,7 +22,8 @@
       <button id="playBtn">PLAY</button>
       <div class="howto">
         <div><b>WASD</b> move &nbsp; <b>Mouse</b> look &nbsp; <b>Left click</b> shoot</div>
-        <div><b>Space</b> jump &nbsp; <b>Shift</b> sprint &nbsp; <b>Esc</b> open menu</div>
+        <div><b>1/2/3</b> switch weapon &nbsp; <b>Space</b> jump &nbsp; <b>Shift</b> sprint</div>
+        <div><b>Esc</b> open menu &nbsp; Walk over blue potions for shield</div>
         <div>Stay inside the blue zone. It shrinks every 30 seconds.</div>
       </div>
     </div>
@@ -44,6 +45,11 @@
     </div>
     <div id="killFeed"></div>
     <div id="crosshair">+</div>
+    <div id="weaponBar">
+      <div class="weapon active" data-weapon="ar"><div class="wKey">1</div><div class="wName">AR</div><div class="wDmg">25</div></div>
+      <div class="weapon" data-weapon="pump"><div class="wKey">2</div><div class="wName">PUMP</div><div class="wDmg">150</div></div>
+      <div class="weapon" data-weapon="sniper"><div class="wKey">3</div><div class="wName">SNIPER</div><div class="wDmg">100</div></div>
+    </div>
     <div id="minimap"><canvas id="minimapCanvas" width="160" height="160"></canvas></div>
     <div id="deathOverlay" class="hidden">
       <div class="deathBox">
