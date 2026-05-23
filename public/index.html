@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Elite Place Battle</title>
+  <link rel="stylesheet" href="style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="lobby">
+    <div class="panel">
+      <h1>ELITE PLACE BATTLE</h1>
+      <p class="subtitle">Last one standing wins.</p>
+      <input id="nameInput" maxlength="16" placeholder="Your name" />
+      <button id="playBtn">PLAY</button>
+      <div class="howto">
+        <div><b>WASD</b> move &nbsp; <b>Mouse</b> look &nbsp; <b>Left click</b> shoot</div>
+        <div><b>Space</b> jump &nbsp; <b>Shift</b> sprint &nbsp; <b>Esc</b> open menu</div>
+        <div>Stay inside the blue zone. It shrinks every 30 seconds.</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="hud" class="hidden">
+    <div id="topbar">
+      <div id="alive">Alive: 1</div>
+      <div id="zoneInfo">Zone: <span id="zoneR">--</span>m</div>
+      <div id="status"></div>
+    </div>
+    <div id="bottombar">
+      <div id="hpWrap">
+        <div id="hpLabel">HP <span id="hpVal">100</span></div>
+        <div id="hpBar"><div id="hpFill"></div></div>
+      </div>
+    </div>
+    <div id="killFeed"></div>
+    <div id="crosshair">+</div>
+    <div id="minimap"><canvas id="minimapCanvas" width="160" height="160"></canvas></div>
+    <div id="deathOverlay" class="hidden">
+      <div class="deathBox">
+        <div id="deathTitle">YOU DIED</div>
+        <div id="deathSub">Spectating... next round soon</div>
+      </div>
+    </div>
+    <div id="winOverlay" class="hidden">
+      <div class="winBox">
+        <div id="winTitle">VICTORY ROYALE</div>
+        <div id="winSub"></div>
+      </div>
+    </div>
+
+    <div id="pauseMenu" class="hidden menuOverlay">
+      <div class="menuBox">
+        <div class="menuTitle">PAUSED</div>
+        <div class="menuSub">Online match — the world keeps moving</div>
+        <button class="menuBtn primary" data-act="resume">RESUME</button>
+        <button class="menuBtn" data-act="settings">SETTINGS</button>
+        <button class="menuBtn danger" data-act="quit">QUIT TO LOBBY</button>
+      </div>
+    </div>
+
+    <div id="settingsPanel" class="hidden menuOverlay">
+      <div class="menuBox settingsBox">
+        <div class="menuTitle">SETTINGS</div>
+
+        <div class="setting">
+          <div class="settingLabel">Mouse Sensitivity <span id="sensVal">100</span>%</div>
+          <input type="range" id="sensSlider" min="20" max="300" value="100" />
+        </div>
+
+        <div class="setting">
+          <div class="settingLabel">Field of View <span id="fovVal">75</span>&deg;</div>
+          <input type="range" id="fovSlider" min="60" max="110" value="75" />
+        </div>
+
+        <div class="setting">
+          <div class="settingLabel">Master Volume <span id="volVal">100</span>%</div>
+          <input type="range" id="volSlider" min="0" max="100" value="100" />
+        </div>
+
+        <div class="setting">
+          <div class="settingLabel">Camera Distance <span id="distVal">5.0</span>m</div>
+          <input type="range" id="distSlider" min="30" max="80" value="50" />
+        </div>
+
+        <div class="setting toggleRow">
+          <label class="toggle"><input type="checkbox" id="invertY" /> Invert Y axis</label>
+          <label class="toggle"><input type="checkbox" id="leftShoulder" /> Left-shoulder camera</label>
+        </div>
+
+        <div class="settingsActions">
+          <button class="menuBtn small" data-act="reset">RESET DEFAULTS</button>
+          <button class="menuBtn small primary" data-act="back">BACK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="game"></canvas>
+
+  <script type="module" src="game.js"></script>
+</body>
+</html>
