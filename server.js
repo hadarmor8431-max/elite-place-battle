@@ -8,9 +8,9 @@ const TICK_RATE = 20;
 const MAX_HP = 100;
 
 const WEAPONS = {
-  ar:     { dmg: 25,  cooldown: 110  },
-  pump:   { dmg: 150, cooldown: 800  },
-  sniper: { dmg: 100, cooldown: 1400 },
+  ar:     { dmg: 25,  cooldown: 110,  range: 80                              },
+  pump:   { dmg: 15,  cooldown: 800,  range: 22,  pellets: 10, spread: 0.09  },
+  sniper: { dmg: 100, cooldown: 1400, range: 250                             },
 };
 const MAP_SIZE = 200;
 const ZONE_DAMAGE_PER_SEC = 5;
@@ -274,6 +274,24 @@ function rayAABB(ox, oy, oz, dx, dy, dz, minX, minY, minZ, maxX, maxY, maxZ) {
   return tmin > 0 ? tmin : (tmax > 0 ? tmax : null);
 }
 
+function applySpread(dx, dy, dz, spread) {
+  const h = Math.sqrt(dx * dx + dz * dz);
+  if (h < 0.01) return [dx, dy, dz];
+  // Right (perpendicular to dir, horizontal)
+  const rx = -dz / h, rz = dx / h;
+  // Up (perpendicular to dir and right)
+  const ux = -dx * dy / h;
+  const uy = h; // = sqrt(1 - dy^2) since dir is unit
+  const uz = -dz * dy / h;
+  const sa = (Math.random() - 0.5) * 2 * spread;
+  const sb = (Math.random() - 0.5) * 2 * spread;
+  const nx = dx + rx * sa + ux * sb;
+  const ny = dy + uy * sb;
+  const nz = dz + rz * sa + uz * sb;
+  const len = Math.sqrt(nx * nx + ny * ny + nz * nz) || 1;
+  return [nx / len, ny / len, nz / len];
+}
+
 function handleShoot(shooterId, msg) {
   const shooter = players.get(shooterId);
   if (!shooter || !shooter.alive || gameState !== 'playing') return;
@@ -284,39 +302,52 @@ function handleShoot(shooterId, msg) {
   if (shooter.lastShot && now - shooter.lastShot < w.cooldown - 30) return;
   shooter.lastShot = now;
   const { ox, oy, oz, dx, dy, dz } = msg;
-  // Normalize direction
+  // Normalize aim direction
   const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
   const ndx = dx / len, ndy = dy / len, ndz = dz / len;
 
-  const maxRange = 200;
-  let bestT = rayHitsObstacle(ox, oy, oz, ndx, ndy, ndz, maxRange);
-  let hitId = null;
+  const maxRange = w.range;
+  const numPellets = w.pellets || 1;
+  const spread = w.spread || 0;
+  const pelletResults = [];
+  const damageByTarget = new Map();
 
-  for (const [id, p] of players) {
-    if (id === shooterId || !p.alive) continue;
-    // Treat player as a vertical capsule approximated as cylinder radius 0.6, height 2
-    const t = raySphere(ox, oy, oz, ndx, ndy, ndz, p.x, p.y + 1, p.z, 0.9);
-    if (t !== null && t > 0 && t < bestT) {
-      bestT = t;
-      hitId = id;
+  for (let pi = 0; pi < numPellets; pi++) {
+    const [pdx, pdy, pdz] = numPellets > 1 ? applySpread(ndx, ndy, ndz, spread) : [ndx, ndy, ndz];
+    let bestT = rayHitsObstacle(ox, oy, oz, pdx, pdy, pdz, maxRange);
+    let hitId = null;
+    for (const [id, p] of players) {
+      if (id === shooterId || !p.alive) continue;
+      const t = raySphere(ox, oy, oz, pdx, pdy, pdz, p.x, p.y + 1, p.z, 0.9);
+      if (t !== null && t > 0 && t < bestT) {
+        bestT = t;
+        hitId = id;
+      }
+    }
+    pelletResults.push({
+      dx: pdx, dy: pdy, dz: pdz,
+      dist: isFinite(bestT) ? bestT : maxRange,
+    });
+    if (hitId !== null) {
+      damageByTarget.set(hitId, (damageByTarget.get(hitId) || 0) + w.dmg);
     }
   }
 
-  // Broadcast shot — include shooter body pos+rotY so client can place muzzle at the gun
+  // Broadcast shot — pellets array carries each pellet's direction+distance
   broadcast({
     type: 'shot',
     shooterId,
     weapon: wname,
     ox, oy, oz,
-    dx: ndx, dy: ndy, dz: ndz,
-    dist: isFinite(bestT) ? bestT : maxRange,
     sx: shooter.x, sy: shooter.y, sz: shooter.z,
     srotY: shooter.rotY,
+    pellets: pelletResults,
   });
 
-  if (hitId !== null) {
+  // Apply accumulated damage (multiple pellets on one target = sum)
+  for (const [hitId, totalDmg] of damageByTarget) {
     const target = players.get(hitId);
-    applyDamage(target, w.dmg);
+    applyDamage(target, totalDmg);
     send(target.ws, { type: 'hp', hp: target.hp, shield: target.shield, fromZone: false });
     if (target.hp <= 0) killPlayer(hitId, shooterId);
   }

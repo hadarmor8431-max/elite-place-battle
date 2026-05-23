@@ -327,9 +327,9 @@ window.addEventListener('resize', () => {
 
 // ---------- WEAPONS ----------
 const WEAPONS = {
-  ar:     { dmg: 25,  cooldown: 110,  color: 0xfff0a8, radius: 0.04, length: 0.9, speed: 220, flashSize: 0.35, flashColor: 0xffdd66, pitch: 1.0 },
-  pump:   { dmg: 150, cooldown: 800,  color: 0xff8855, radius: 0.07, length: 1.3, speed: 180, flashSize: 0.55, flashColor: 0xff7733, pitch: 0.65 },
-  sniper: { dmg: 100, cooldown: 1400, color: 0xc0eaff, radius: 0.03, length: 2.0, speed: 600, flashSize: 0.28, flashColor: 0xddffff, pitch: 1.35 },
+  ar:     { dmg: 25,  cooldown: 110,  color: 0xfff0a8, radius: 0.04, length: 0.9,  speed: 220, flashSize: 0.35, flashColor: 0xffdd66, pitch: 1.0  },
+  pump:   { dmg: 150, cooldown: 800,  color: 0xff9955, radius: 0.03, length: 0.35, speed: 150, flashSize: 0.6,  flashColor: 0xff7733, pitch: 0.65 },
+  sniper: { dmg: 100, cooldown: 1400, color: 0xc0eaff, radius: 0.03, length: 2.0,  speed: 600, flashSize: 0.28, flashColor: 0xddffff, pitch: 1.35 },
 };
 let currentWeapon = 'ar';
 let lastShotTime = 0;
@@ -376,29 +376,31 @@ function spawnShotEffect(msg, isMine) {
   const gunY = msg.sy + 1.5;
   const gunZ = msg.sz + rgtZ * 0.45 + fwdZ * 0.5;
 
-  // Impact point (server-validated ray endpoint)
-  const ix = msg.ox + msg.dx * msg.dist;
-  const iy = msg.oy + msg.dy * msg.dist;
-  const iz = msg.oz + msg.dz * msg.dist;
+  // Pellets array; for single-shot weapons it has one element
+  const pellets = msg.pellets || [{ dx: msg.dx, dy: msg.dy, dz: msg.dz, dist: msg.dist }];
 
-  // Bullet streak (weapon-specific size and color)
-  const bulletGeom = new THREE.CylinderGeometry(w.radius, w.radius, w.length, 6);
-  bulletGeom.rotateX(Math.PI / 2);
-  const bulletMat = new THREE.MeshBasicMaterial({ color: w.color, transparent: true, opacity: 0.95 });
-  const bullet = new THREE.Mesh(bulletGeom, bulletMat);
-  bullet.position.set(gunX, gunY, gunZ);
-  bullet.lookAt(ix, iy, iz);
-  scene.add(bullet);
-  const totalDist = Math.hypot(ix - gunX, iy - gunY, iz - gunZ);
-  bullets.push({
-    mesh: bullet,
-    sx: gunX, sy: gunY, sz: gunZ,
-    ex: ix, ey: iy, ez: iz,
-    elapsed: 0,
-    duration: Math.max(0.03, totalDist / w.speed),
-  });
+  for (const p of pellets) {
+    const ix = msg.ox + p.dx * p.dist;
+    const iy = msg.oy + p.dy * p.dist;
+    const iz = msg.oz + p.dz * p.dist;
+    const bulletGeom = new THREE.CylinderGeometry(w.radius, w.radius, w.length, 6);
+    bulletGeom.rotateX(Math.PI / 2);
+    const bulletMat = new THREE.MeshBasicMaterial({ color: w.color, transparent: true, opacity: 0.95 });
+    const bullet = new THREE.Mesh(bulletGeom, bulletMat);
+    bullet.position.set(gunX, gunY, gunZ);
+    bullet.lookAt(ix, iy, iz);
+    scene.add(bullet);
+    const totalDist = Math.hypot(ix - gunX, iy - gunY, iz - gunZ);
+    bullets.push({
+      mesh: bullet,
+      sx: gunX, sy: gunY, sz: gunZ,
+      ex: ix, ey: iy, ez: iz,
+      elapsed: 0,
+      duration: Math.max(0.03, totalDist / w.speed),
+    });
+  }
 
-  // Muzzle flash sphere + brief point light
+  // ONE muzzle flash + light per shot (not per pellet)
   const flashGeom = new THREE.SphereGeometry(w.flashSize, 8, 8);
   const flashMat = new THREE.MeshBasicMaterial({ color: w.flashColor, transparent: true, opacity: 1, depthWrite: false });
   const flashMesh = new THREE.Mesh(flashGeom, flashMat);
@@ -409,7 +411,7 @@ function spawnShotEffect(msg, isMine) {
   scene.add(flashLight);
   flashes.push({ mesh: flashMesh, light: flashLight, life: 0.07, max: 0.07 });
 
-  // Audio with distance attenuation for other players, weapon-specific pitch
+  // ONE sound per shot, with distance attenuation for other players
   let vol = 1.0;
   if (!isMine) {
     const cam = new THREE.Vector3();
