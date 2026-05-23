@@ -308,7 +308,7 @@ body.touch { touch-action: none; -webkit-user-select: none; user-select: none; }
 #touchFire:active { background: rgba(255, 80, 80, 0.85); }
 
 #touchJump {
-  bottom: 30px;
+  bottom: 150px;
   right: 160px;
   width: 80px;
   height: 80px;
@@ -339,16 +339,15 @@ body.touch .weapon .wName { font-size: 13px; }
 /* Hide kill feed slightly to avoid blocking fire button on small screens */
 body.touch #killFeed { width: 200px; top: 78px; }
 
+/* Shrink minimap and reposition bottom bar on touch devices */
+body.touch #minimap { width: 78px; height: 78px; top: 70px; left: 12px; }
+body.touch #minimap canvas { width: 78px; height: 78px; display: block; }
+body.touch #bottombar { width: 180px; bottom: 12px; left: 12px; }
+body.touch #hpLabel, body.touch #shieldLabel { font-size: 11px; }
+
 .touchOnly { display: none; }
 body.touch .desktopOnly { display: none; }
 body.touch .touchOnly { display: block; }
-
-@media (max-width: 600px) {
-  #bottombar { width: 180px; bottom: 12px; left: 12px; }
-  #hpLabel, #shieldLabel { font-size: 11px; }
-  #minimap { width: 110px; height: 110px; top: 70px; left: 12px; }
-  #minimap canvas { width: 110px; height: 110px; }
-}
 
 #killFeed {
   position: absolute;
