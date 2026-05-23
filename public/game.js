@@ -7,6 +7,8 @@ const nameInput = document.getElementById('nameInput');
 const hud = document.getElementById('hud');
 const hpFill = document.getElementById('hpFill');
 const hpVal = document.getElementById('hpVal');
+const shieldFill = document.getElementById('shieldFill');
+const shieldVal = document.getElementById('shieldVal');
 const aliveEl = document.getElementById('alive');
 const zoneREl = document.getElementById('zoneR');
 const statusEl = document.getElementById('status');
@@ -141,6 +143,64 @@ function buildObstacles(obs) {
   }
 }
 
+// Potion (shield pickup) management
+const potionMeshes = new Map(); // id -> mesh
+
+function spawnPotion(id, x, z) {
+  const group = new THREE.Group();
+  const bottle = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.3, 0.3, 0.7, 10),
+    new THREE.MeshLambertMaterial({
+      color: 0x4fc3ff,
+      emissive: 0x1f6bb0,
+      emissiveIntensity: 0.6,
+      transparent: true,
+      opacity: 0.9,
+    })
+  );
+  bottle.position.y = 0.35;
+  group.add(bottle);
+  const cap = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22, 0.22, 0.18, 8),
+    new THREE.MeshLambertMaterial({ color: 0x1a1a2a })
+  );
+  cap.position.y = 0.79;
+  group.add(cap);
+  const glow = new THREE.Mesh(
+    new THREE.SphereGeometry(0.55, 10, 10),
+    new THREE.MeshBasicMaterial({ color: 0x4fc3ff, transparent: true, opacity: 0.18, depthWrite: false })
+  );
+  glow.position.y = 0.4;
+  group.add(glow);
+  group.position.set(x, 0.6, z);
+  group.userData.baseY = 0.6;
+  group.userData.phase = Math.random() * Math.PI * 2;
+  scene.add(group);
+  potionMeshes.set(id, group);
+}
+
+function removePotion(id) {
+  const m = potionMeshes.get(id);
+  if (!m) return;
+  scene.remove(m);
+  m.traverse((c) => {
+    if (c.geometry) c.geometry.dispose();
+    if (c.material) c.material.dispose();
+  });
+  potionMeshes.delete(id);
+}
+
+function clearAllPotions() {
+  for (const id of [...potionMeshes.keys()]) removePotion(id);
+}
+
+function animatePotions(t) {
+  for (const m of potionMeshes.values()) {
+    m.position.y = m.userData.baseY + Math.sin(t * 2 + m.userData.phase) * 0.15;
+    m.rotation.y += 0.025;
+  }
+}
+
 // Player models
 function makePlayerMesh(color, name) {
   const group = new THREE.Group();
@@ -196,6 +256,7 @@ const me = {
   vy: 0,
   onGround: true,
   hp: 100,
+  shield: 0,
   alive: false,
   pitch: 0,
 };
@@ -467,12 +528,19 @@ function handleMsg(msg) {
       myMesh = makePlayerMesh(colorFor(me.id), '');
       scene.add(myMesh);
     }
+    clearAllPotions();
+    if (msg.potions) {
+      for (const p of msg.potions) spawnPotion(p.id, p.x, p.z);
+    }
   } else if (msg.type === 'state') {
     updateFromState(msg.players);
   } else if (msg.type === 'hp') {
     me.hp = msg.hp;
+    if (typeof msg.shield === 'number') me.shield = msg.shield;
     updateHpUI();
     if (msg.fromZone) statusEl.textContent = 'Outside zone! Move in.';
+  } else if (msg.type === 'pickup') {
+    removePotion(msg.potionId);
   } else if (msg.type === 'shot') {
     spawnShotEffect(msg, msg.shooterId === me.id);
   } else if (msg.type === 'kill') {
@@ -497,10 +565,15 @@ function handleMsg(msg) {
     gameState = 'playing';
     me.alive = true;
     me.hp = 100;
+    me.shield = 0;
+    clearAllPotions();
+    if (msg.potions) {
+      for (const p of msg.potions) spawnPotion(p.id, p.x, p.z);
+    }
     deathOverlay.classList.add('hidden');
     winOverlay.classList.add('hidden');
-    statusEl.textContent = 'Round started!';
-    setTimeout(() => { if (statusEl.textContent === 'Round started!') statusEl.textContent = ''; }, 3000);
+    statusEl.textContent = 'Round started! Find blue potions for shield.';
+    setTimeout(() => { if (statusEl.textContent.startsWith('Round started')) statusEl.textContent = ''; }, 4000);
     updateHpUI();
   } else if (msg.type === 'gameover') {
     gameState = 'ended';
@@ -529,9 +602,11 @@ function updateFromState(playersArr) {
     seen.add(p.id);
     if (p.alive) aliveN++;
     if (p.id === me.id) {
-      // Sync HP from server (in case of zone damage)
-      if (p.hp !== me.hp) {
+      // Sync HP/shield from server
+      const sh = (typeof p.shield === 'number') ? p.shield : me.shield;
+      if (p.hp !== me.hp || sh !== me.shield) {
         me.hp = p.hp;
+        me.shield = sh;
         updateHpUI();
       }
       // Server may have respawned us
@@ -572,9 +647,12 @@ function updateZoneMesh() {
 }
 
 function updateHpUI() {
-  const pct = Math.max(0, Math.min(100, me.hp));
-  hpFill.style.width = `${pct}%`;
-  hpVal.textContent = pct;
+  const hpPct = Math.max(0, Math.min(100, me.hp));
+  hpFill.style.width = `${hpPct}%`;
+  hpVal.textContent = hpPct;
+  const sPct = Math.max(0, Math.min(100, me.shield));
+  shieldFill.style.width = `${sPct}%`;
+  shieldVal.textContent = sPct;
 }
 
 function addKill(text) {
@@ -772,6 +850,13 @@ function drawMinimap() {
     ctx.arc(cx + op.x * scale, cy + op.z * scale, 2.5, 0, Math.PI * 2);
     ctx.fill();
   }
+  // Potions
+  ctx.fillStyle = '#4fc3ff';
+  for (const m of potionMeshes.values()) {
+    ctx.beginPath();
+    ctx.arc(cx + m.position.x * scale, cy + m.position.z * scale, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  }
   // Me
   if (me.alive) {
     ctx.fillStyle = '#6bff8a';
@@ -786,6 +871,7 @@ function loop() {
   update(dt);
   interpolateOthers(dt);
   updateEffects(dt);
+  animatePotions(clock.elapsedTime);
   drawMinimap();
   renderer.render(scene, camera);
   requestAnimationFrame(loop);

@@ -12,6 +12,10 @@ const ZONE_DAMAGE_PER_SEC = 5;
 const ZONE_SHRINK_INTERVAL_MS = 30000;
 const ZONE_SHRINK_FACTOR = 0.6;
 const MIN_ZONE_RADIUS = 8;
+const MAX_SHIELD = 100;
+const SHIELD_PER_POTION = 25;
+const POTION_COUNT = 30;
+const PICKUP_RADIUS = 1.8;
 
 const app = express();
 app.use(express.static(path.join(__dirname, 'public')));
@@ -25,6 +29,8 @@ const obstacles = generateObstacles();
 let nextId = 1;
 let gameState = 'waiting'; // waiting | playing | ended
 let zone = { cx: 0, cz: 0, r: MAP_SIZE / 2 };
+let potions = []; // {id, x, z}
+let nextPotionId = 1;
 let lastShrink = Date.now();
 let lastTick = Date.now();
 let lastZoneDamage = Date.now();
@@ -91,14 +97,46 @@ function startGame() {
   lastShrink = Date.now();
   lastZoneDamage = Date.now();
   winnerInfo = null;
+  potions = generatePotions();
   for (const p of players.values()) {
     const pos = spawnPos();
     p.x = pos.x; p.y = pos.y; p.z = pos.z;
     p.hp = MAX_HP;
+    p.shield = 0;
     p.alive = true;
     p.rotY = 0;
   }
-  broadcast({ type: 'gamestart', zone, obstacles });
+  broadcast({ type: 'gamestart', zone, obstacles, potions });
+}
+
+function generatePotions() {
+  const arr = [];
+  for (let i = 0; i < POTION_COUNT; i++) {
+    let x = 0, z = 0, ok = false;
+    for (let tries = 0; tries < 20 && !ok; tries++) {
+      x = (Math.random() - 0.5) * (MAP_SIZE - 20);
+      z = (Math.random() - 0.5) * (MAP_SIZE - 20);
+      ok = true;
+      for (const o of obstacles) {
+        if (o.tree) continue;
+        if (Math.abs(x - o.x) < o.w / 2 + 1.5 && Math.abs(z - o.z) < o.d / 2 + 1.5) {
+          ok = false;
+          break;
+        }
+      }
+    }
+    arr.push({ id: nextPotionId++, x, z });
+  }
+  return arr;
+}
+
+function applyDamage(p, dmg) {
+  if (p.shield > 0) {
+    const absorbed = Math.min(p.shield, dmg);
+    p.shield -= absorbed;
+    dmg -= absorbed;
+  }
+  if (dmg > 0) p.hp -= dmg;
 }
 
 function endGame(winnerId) {
@@ -145,9 +183,24 @@ function tick() {
         const dx = p.x - zone.cx;
         const dz = p.z - zone.cz;
         if (Math.sqrt(dx * dx + dz * dz) > zone.r) {
-          p.hp -= ZONE_DAMAGE_PER_SEC;
-          send(p.ws, { type: 'hp', hp: p.hp, fromZone: true });
+          applyDamage(p, ZONE_DAMAGE_PER_SEC);
+          send(p.ws, { type: 'hp', hp: p.hp, shield: p.shield, fromZone: true });
           if (p.hp <= 0) killPlayer(id, null);
+        }
+      }
+    }
+
+    // Pickup potions
+    for (const [pid, p] of players) {
+      if (!p.alive) continue;
+      for (let i = potions.length - 1; i >= 0; i--) {
+        const pot = potions[i];
+        const dx = p.x - pot.x, dz = p.z - pot.z;
+        if (dx * dx + dz * dz < PICKUP_RADIUS * PICKUP_RADIUS && p.shield < MAX_SHIELD) {
+          p.shield = Math.min(MAX_SHIELD, p.shield + SHIELD_PER_POTION);
+          const removed = potions.splice(i, 1)[0];
+          broadcast({ type: 'pickup', potionId: removed.id });
+          send(p.ws, { type: 'hp', hp: p.hp, shield: p.shield, fromZone: false });
         }
       }
     }
@@ -163,7 +216,7 @@ function tick() {
   // Broadcast state
   const snapshot = [];
   for (const [id, p] of players) {
-    snapshot.push({ id, name: p.name, x: p.x, y: p.y, z: p.z, rotY: p.rotY, hp: p.hp, alive: p.alive });
+    snapshot.push({ id, name: p.name, x: p.x, y: p.y, z: p.z, rotY: p.rotY, hp: p.hp, shield: p.shield, alive: p.alive });
   }
   broadcast({ type: 'state', players: snapshot, t: now });
 }
@@ -251,8 +304,8 @@ function handleShoot(shooterId, msg) {
 
   if (hitId !== null) {
     const target = players.get(hitId);
-    target.hp -= SHOT_DAMAGE;
-    send(target.ws, { type: 'hp', hp: target.hp, fromZone: false });
+    applyDamage(target, SHOT_DAMAGE);
+    send(target.ws, { type: 'hp', hp: target.hp, shield: target.shield, fromZone: false });
     if (target.hp <= 0) killPlayer(hitId, shooterId);
   }
 }
@@ -280,6 +333,7 @@ wss.on('connection', (ws) => {
     x: 0, y: 0, z: 0,
     rotY: 0,
     hp: MAX_HP,
+    shield: 0,
     alive: false,
   };
   players.set(id, p);
@@ -289,6 +343,7 @@ wss.on('connection', (ws) => {
     id,
     obstacles,
     zone,
+    potions,
     mapSize: MAP_SIZE,
     gameState,
     winner: winnerInfo,
@@ -308,6 +363,7 @@ wss.on('connection', (ws) => {
           const pos = spawnPos();
           player.x = pos.x; player.y = pos.y; player.z = pos.z;
           player.hp = MAX_HP;
+          player.shield = 0;
           player.alive = true;
         }
       }

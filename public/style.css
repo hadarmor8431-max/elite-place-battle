@@ -137,20 +137,31 @@ canvas#game {
   width: 280px;
 }
 
-#hpLabel {
+#shieldLabel, #hpLabel {
   font-size: 13px;
   font-weight: 700;
   color: #b8c5d8;
   margin-bottom: 4px;
 }
+#shieldVal { color: #4fc3ff; }
 #hpVal { color: #ff6b6b; }
 
-#hpBar {
-  height: 16px;
+#shieldBar, #hpBar {
+  height: 14px;
   background: rgba(10, 14, 26, 0.8);
   border: 1px solid #2a3a5e;
   border-radius: 4px;
   overflow: hidden;
+}
+
+#shieldBar { margin-bottom: 8px; }
+
+#shieldFill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #4fc3ff, #7dd3ff);
+  box-shadow: 0 0 8px rgba(79, 195, 255, 0.5);
+  transition: width 0.15s;
 }
 
 #hpFill {
