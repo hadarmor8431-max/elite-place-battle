@@ -143,6 +143,84 @@ function buildObstacles(obs) {
   }
 }
 
+// ---------- BUILD PIECES ----------
+const GRID = 4;
+const placedPieces = new Map(); // id -> {data, mesh}
+
+function buildPieceMesh(piece, opts = {}) {
+  const matColor = opts.color !== undefined ? opts.color : (piece.type === 'wall' ? 0xc4a26a : piece.type === 'floor' ? 0x8a6a3f : 0x7a5524);
+  const matOpts = opts.ghost ? { color: matColor, transparent: true, opacity: 0.45, depthWrite: false } : { color: matColor };
+  const mat = new THREE.MeshLambertMaterial(matOpts);
+  const g = new THREE.Group();
+  const half = GRID / 2;
+  const tiles = piece.tiles !== undefined ? piece.tiles : 0x1FF;
+
+  if (piece.type === 'ramp') {
+    // Tilted slab acts as a ramp going from floor at front to ceiling at back
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(GRID, 0.25, GRID * Math.SQRT2), mat);
+    slab.rotation.x = -Math.PI / 4;
+    g.add(slab);
+    g.position.set(piece.gx * GRID, piece.gy * GRID, piece.gz * GRID);
+    g.rotation.y = (piece.rot || 0) * Math.PI / 2;
+    return g;
+  }
+
+  // Wall and floor are rendered as 9 tiles (3x3) based on tile mask
+  const tileSize = GRID / 3;
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 3; col++) {
+      const bitIdx = row * 3 + col;
+      if (!(tiles & (1 << bitIdx))) continue;
+      let geom, x, y, z;
+      if (piece.type === 'wall') {
+        geom = new THREE.BoxGeometry(tileSize, tileSize, 0.22);
+        x = (col - 1) * tileSize;
+        y = (1 - row) * tileSize;
+        z = 0;
+      } else {
+        // floor — 3x3 in XZ plane
+        geom = new THREE.BoxGeometry(tileSize, 0.22, tileSize);
+        x = (col - 1) * tileSize;
+        y = 0;
+        z = (row - 1) * tileSize;
+      }
+      const tile = new THREE.Mesh(geom, mat);
+      tile.position.set(x, y, z);
+      tile.userData.tileIdx = bitIdx;
+      g.add(tile);
+    }
+  }
+  const cx = piece.gx * GRID;
+  const cy = piece.gy * GRID + (piece.type === 'floor' ? -half : 0);
+  const cz = piece.gz * GRID;
+  g.position.set(cx, cy, cz);
+  g.rotation.y = (piece.rot || 0) * Math.PI / 2;
+  return g;
+}
+
+function addOrUpdatePiece(piece) {
+  const existing = placedPieces.get(piece.id);
+  if (existing) {
+    scene.remove(existing.mesh);
+    existing.mesh.traverse((n) => { if (n.geometry) n.geometry.dispose(); if (n.material) n.material.dispose(); });
+  }
+  const mesh = buildPieceMesh(piece);
+  scene.add(mesh);
+  placedPieces.set(piece.id, { data: piece, mesh });
+}
+
+function removePieceById(id) {
+  const p = placedPieces.get(id);
+  if (!p) return;
+  scene.remove(p.mesh);
+  p.mesh.traverse((n) => { if (n.geometry) n.geometry.dispose(); if (n.material) n.material.dispose(); });
+  placedPieces.delete(id);
+}
+
+function clearAllPieces() {
+  for (const id of [...placedPieces.keys()]) removePieceById(id);
+}
+
 // Potion (shield pickup) management
 const potionMeshes = new Map(); // id -> mesh
 
@@ -414,6 +492,14 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'Digit1') selectWeapon('ar');
   else if (e.code === 'Digit2') selectWeapon('pump');
   else if (e.code === 'Digit3') selectWeapon('sniper');
+  else if (e.code === 'KeyZ') selectBuildPiece('wall');
+  else if (e.code === 'KeyX') selectBuildPiece('floor');
+  else if (e.code === 'KeyC') selectBuildPiece('ramp');
+  else if (e.code === 'KeyG') {
+    if (editMode.active) exitEditMode(true);
+    else tryEnterEditMode();
+  }
+  else if (e.code === 'Escape' && editMode.active) exitEditMode(false);
 });
 window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
@@ -421,6 +507,12 @@ document.querySelectorAll('.weapon').forEach((el) => {
   el.addEventListener('click', (e) => {
     e.stopPropagation();
     selectWeapon(el.dataset.weapon);
+  });
+});
+document.querySelectorAll('.buildPiece').forEach((el) => {
+  el.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectBuildPiece(el.dataset.piece);
   });
 });
 
@@ -451,6 +543,8 @@ document.addEventListener('mousemove', (e) => {
 
 document.addEventListener('mousedown', (e) => {
   if (!pointerLocked || e.button !== 0 || menuOpen) return;
+  if (editMode.active) { toggleEditTile(); return; }
+  if (buildMode.active) { placePiece(); return; }
   mouseHeld = true;
   fireShot(); // immediate first shot (one click = one shot for pump/sniper)
 });
@@ -561,6 +655,26 @@ if (isTouchDevice) {
     else openPauseMenu();
   });
 
+  const buildBtn = document.getElementById('touchBuild');
+  const placeBtn = document.getElementById('touchPlace');
+  buildBtn && buildBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (buildMode.active) exitBuildMode();
+    else selectBuildPiece('wall');
+  });
+  placeBtn && placeBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    if (editMode.active) toggleEditTile();
+    else placePiece();
+  });
+
+  document.querySelectorAll('.buildPiece').forEach((el) => {
+    el.addEventListener('touchstart', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      selectBuildPiece(el.dataset.piece);
+    });
+  });
+
   // Weapon buttons via touchstart (faster than click on mobile)
   document.querySelectorAll('.weapon').forEach((el) => {
     el.addEventListener('touchstart', (e) => {
@@ -585,8 +699,24 @@ const WEAPONS = {
 let currentWeapon = 'ar';
 let lastShotTime = 0;
 
+// ---------- BUILD MODE STATE ----------
+const buildMode = {
+  active: false,
+  pieceType: 'wall', // wall | floor | ramp
+  ghostMesh: null,
+  ghostValid: false,
+  target: null, // {gx, gy, gz, rot}
+};
+const editMode = {
+  active: false,
+  pieceId: null,
+  tiles: 0,
+};
+
 function selectWeapon(name) {
-  if (!WEAPONS[name] || currentWeapon === name) return;
+  if (!WEAPONS[name]) return;
+  exitBuildMode();
+  if (currentWeapon === name) return;
   currentWeapon = name;
   document.querySelectorAll('.weapon').forEach((el) => {
     el.classList.toggle('active', el.dataset.weapon === name);
@@ -596,6 +726,164 @@ function selectWeapon(name) {
     ws.send(JSON.stringify({ type: 'weapon', weapon: name }));
   }
   updateScope();
+}
+
+function selectBuildPiece(type) {
+  if (!['wall', 'floor', 'ramp'].includes(type)) return;
+  buildMode.active = true;
+  buildMode.pieceType = type;
+  document.body.classList.add('building');
+  document.querySelectorAll('.buildPiece').forEach((el) => {
+    el.classList.toggle('active', el.dataset.piece === type);
+  });
+  destroyGhost();
+}
+
+function exitBuildMode() {
+  buildMode.active = false;
+  document.body.classList.remove('building');
+  destroyGhost();
+  exitEditMode();
+}
+
+function destroyGhost() {
+  if (buildMode.ghostMesh) {
+    scene.remove(buildMode.ghostMesh);
+    buildMode.ghostMesh.traverse && buildMode.ghostMesh.traverse((n) => {
+      if (n.geometry) n.geometry.dispose();
+      if (n.material) n.material.dispose();
+    });
+    buildMode.ghostMesh = null;
+  }
+  buildMode.target = null;
+  buildMode.ghostValid = false;
+}
+
+function pieceKeyClient(gx, gy, gz, type, rot) {
+  if (type === 'wall') return `${gx},${gy},${gz},wall,${rot}`;
+  return `${gx},${gy},${gz},${type}`;
+}
+
+function computeBuildTarget() {
+  // Cast a ray from the camera; place the piece at a grid cell ~5m in front of the player
+  const origin = new THREE.Vector3();
+  camera.getWorldPosition(origin);
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  const dist = 5;
+  const target = origin.clone().addScaledVector(dir, dist);
+
+  // Snap to grid
+  const gx = Math.round(target.x / GRID);
+  const gz = Math.round(target.z / GRID);
+  // Vertical: clamp to nearby Y based on player level
+  const gy = Math.max(0, Math.round((me.y + 1.5) / GRID));
+
+  // Rotation: snap player's yaw to cardinal
+  // me.rotY: 0 => facing -Z, π/2 => facing -X, π => facing +Z, etc.
+  // Wall should face the player, so wall's "front" should point opposite to player's facing.
+  // Map rotY to rot index: 0,1,2,3 represent rotation around Y by 0, π/2, π, 3π/2.
+  let rot = ((Math.round(me.rotY / (Math.PI / 2)) % 4) + 4) % 4;
+
+  return { gx, gy, gz, rot, type: buildMode.pieceType };
+}
+
+function updateGhost() {
+  if (!buildMode.active || !me.alive) {
+    destroyGhost();
+    return;
+  }
+  const t = computeBuildTarget();
+  const key = pieceKeyClient(t.gx, t.gy, t.gz, t.type, t.rot);
+  // Check if any placed piece has this key
+  let occupied = false;
+  for (const p of placedPieces.values()) {
+    const k = pieceKeyClient(p.data.gx, p.data.gy, p.data.gz, p.data.type, p.data.rot);
+    if (k === key) { occupied = true; break; }
+  }
+  buildMode.ghostValid = !occupied;
+  buildMode.target = t;
+
+  // Rebuild ghost if target changed
+  if (buildMode.ghostMesh && buildMode.ghostMesh.userData.key === key) {
+    // Same key, just update color based on validity
+    const color = occupied ? 0xff5555 : 0x55ff88;
+    buildMode.ghostMesh.traverse((n) => {
+      if (n.material) n.material.color.setHex(color);
+    });
+    return;
+  }
+  destroyGhost();
+  const piece = { type: t.type, gx: t.gx, gy: t.gy, gz: t.gz, rot: t.rot, tiles: 0x1FF };
+  const mesh = buildPieceMesh(piece, { ghost: true, color: occupied ? 0xff5555 : 0x55ff88 });
+  mesh.userData.key = key;
+  scene.add(mesh);
+  buildMode.ghostMesh = mesh;
+}
+
+function placePiece() {
+  if (!buildMode.active || !buildMode.target || !buildMode.ghostValid) return;
+  const t = buildMode.target;
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'build', pieceType: t.type, gx: t.gx, gy: t.gy, gz: t.gz, rot: t.rot }));
+  }
+}
+
+function tryEnterEditMode() {
+  if (!buildMode.active) return;
+  // Raycast against owned pieces from camera
+  const origin = new THREE.Vector3();
+  camera.getWorldPosition(origin);
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  const raycaster = new THREE.Raycaster(origin, dir, 0.1, 8);
+  let bestT = Infinity;
+  let target = null;
+  for (const p of placedPieces.values()) {
+    if (p.data.ownerId !== me.id) continue;
+    if (p.data.type === 'ramp') continue;
+    const hits = raycaster.intersectObject(p.mesh, true);
+    if (hits.length && hits[0].distance < bestT) {
+      bestT = hits[0].distance;
+      target = p;
+    }
+  }
+  if (target) {
+    editMode.active = true;
+    editMode.pieceId = target.data.id;
+    editMode.tiles = target.data.tiles;
+    document.body.classList.add('editing');
+  }
+}
+
+function exitEditMode(commit = true) {
+  if (editMode.active && commit && ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'piece_edit', pieceId: editMode.pieceId, tiles: editMode.tiles }));
+  }
+  editMode.active = false;
+  editMode.pieceId = null;
+  document.body.classList.remove('editing');
+}
+
+function toggleEditTile() {
+  if (!editMode.active) return;
+  const p = placedPieces.get(editMode.pieceId);
+  if (!p) return;
+  // Raycast against the piece's tiles
+  const origin = new THREE.Vector3();
+  camera.getWorldPosition(origin);
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  const raycaster = new THREE.Raycaster(origin, dir, 0.1, 12);
+  const hits = raycaster.intersectObject(p.mesh, true);
+  if (!hits.length) return;
+  const tileIdx = hits[0].object.userData.tileIdx;
+  if (tileIdx === undefined) return;
+  editMode.tiles ^= (1 << tileIdx);
+  // Visually update piece preview by rebuilding it with new tiles
+  const newPiece = { ...p.data, tiles: editMode.tiles };
+  addOrUpdatePiece(newPiece);
+  p.data.tiles = editMode.tiles;
 }
 
 // ---------- SHOOTING ----------
@@ -883,6 +1171,20 @@ function handleMsg(msg) {
     if (msg.potions) {
       for (const p of msg.potions) spawnPotion(p.id, p.x, p.z);
     }
+    clearAllPieces();
+    if (msg.pieces) {
+      for (const piece of msg.pieces) addOrUpdatePiece(piece);
+    }
+  } else if (msg.type === 'piece_placed') {
+    addOrUpdatePiece(msg.piece);
+  } else if (msg.type === 'piece_destroyed') {
+    removePieceById(msg.pieceId);
+  } else if (msg.type === 'piece_edited') {
+    const p = placedPieces.get(msg.pieceId);
+    if (p) { p.data.tiles = msg.tiles; addOrUpdatePiece(p.data); }
+  } else if (msg.type === 'piece_hp') {
+    const p = placedPieces.get(msg.pieceId);
+    if (p) p.data.hp = msg.hp;
   } else if (msg.type === 'state') {
     updateFromState(msg.players);
   } else if (msg.type === 'hp') {
@@ -924,6 +1226,10 @@ function handleMsg(msg) {
     clearAllPotions();
     if (msg.potions) {
       for (const p of msg.potions) spawnPotion(p.id, p.x, p.z);
+    }
+    clearAllPieces();
+    if (msg.pieces) {
+      for (const piece of msg.pieces) addOrUpdatePiece(piece);
     }
     deathOverlay.classList.add('hidden');
     winOverlay.classList.add('hidden');
@@ -1253,6 +1559,7 @@ function loop() {
   updateEffects(dt);
   updateDamageNumbers(dt);
   animatePotions(clock.elapsedTime);
+  updateGhost();
   drawMinimap();
   renderer.render(scene, camera);
   requestAnimationFrame(loop);

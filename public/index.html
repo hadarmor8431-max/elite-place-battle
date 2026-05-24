@@ -22,9 +22,9 @@
       <button id="playBtn">PLAY</button>
       <div class="howto desktopOnly">
         <div><b>WASD</b> move &nbsp; <b>Mouse</b> look &nbsp; <b>Left click</b> shoot</div>
-        <div><b>1/2/3</b> switch weapon &nbsp; <b>Space</b> jump &nbsp; <b>Shift</b> sprint</div>
-        <div><b>Esc</b> open menu &nbsp; Walk over blue potions for shield</div>
-        <div>Stay inside the blue zone. It shrinks every 30 seconds.</div>
+        <div><b>1/2/3</b> weapon &nbsp; <b>Z/X/C</b> build (wall/floor/ramp) &nbsp; <b>G</b> edit own piece</div>
+        <div><b>Space</b> jump &nbsp; <b>Shift</b> sprint &nbsp; <b>Esc</b> menu/cancel edit</div>
+        <div>Walk over blue potions for shield. Stay in the blue zone!</div>
       </div>
       <div class="howto touchOnly">
         <div><b>Left half</b>: drag joystick to move (full push = sprint)</div>
@@ -78,11 +78,21 @@
       </div>
     </div>
 
+    <div id="buildBar">
+      <div class="buildPiece" data-piece="wall"><div class="bKey">Z</div><div class="bName">WALL</div></div>
+      <div class="buildPiece" data-piece="floor"><div class="bKey">X</div><div class="bName">FLOOR</div></div>
+      <div class="buildPiece" data-piece="ramp"><div class="bKey">C</div><div class="bName">RAMP</div></div>
+    </div>
+    <div id="buildHint">Build mode &mdash; click to place &middot; G edit owned piece &middot; 1/2/3 back to weapon</div>
+    <div id="editHint">Edit mode &mdash; click tile to toggle &middot; G confirm &middot; Esc cancel</div>
+
     <div id="touchControls">
       <div id="joystickBase"><div id="joystickKnob"></div></div>
       <button class="touchBtn" id="touchFire">FIRE</button>
       <button class="touchBtn" id="touchJump">JUMP</button>
       <button class="touchBtn small" id="touchPause">&#9776;</button>
+      <button class="touchBtn small" id="touchBuild">&#x1F528;</button>
+      <button class="touchBtn small" id="touchPlace">PLACE</button>
     </div>
     <div id="minimap"><canvas id="minimapCanvas" width="160" height="160"></canvas></div>
     <div id="deathOverlay" class="hidden">

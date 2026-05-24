@@ -313,6 +313,68 @@ body.scoped #crosshair { display: none; }
   transition: width 0.05s linear;
 }
 
+/* ---------- BUILD MODE UI ---------- */
+#buildBar {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: none;
+  gap: 10px;
+  pointer-events: auto;
+}
+body.building #buildBar { display: flex; }
+
+.buildPiece {
+  width: 84px;
+  background: rgba(10, 14, 26, 0.85);
+  border: 2px solid #2a3a5e;
+  border-radius: 8px;
+  padding: 10px 6px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  backdrop-filter: blur(6px);
+}
+.buildPiece:hover { border-color: #4a6aa0; }
+.buildPiece.active {
+  border-color: #55ff88;
+  background: rgba(30, 80, 50, 0.85);
+  box-shadow: 0 0 14px rgba(85, 255, 136, 0.35);
+}
+.buildPiece .bKey { font-size: 11px; color: #6a7a96; font-weight: 700; }
+.buildPiece.active .bKey { color: #b8c5d8; }
+.buildPiece .bName { font-size: 14px; font-weight: 800; color: #fff; letter-spacing: 1.5px; margin-top: 4px; }
+
+#buildHint, #editHint {
+  position: absolute;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 14, 26, 0.85);
+  border: 1px solid #2a3a5e;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #b8c5d8;
+  display: none;
+  pointer-events: none;
+}
+body.building #buildHint { display: block; }
+body.editing #editHint { display: block; }
+body.editing #buildHint { display: none; }
+body.building #weaponBar > .weapon { opacity: 0.5; }
+body.editing #weaponBar > .weapon { opacity: 0.5; }
+
+/* When building/editing, show special crosshair color */
+body.building #crosshair { color: rgba(85, 255, 136, 0.85); }
+body.editing #crosshair { color: rgba(192, 224, 255, 0.85); }
+
+/* Touch build / place buttons (mobile) */
+body.touch #touchBuild { top: 76px; right: 16px; }
+body.touch #touchPlace { bottom: 250px; right: 30px; width: 90px; height: 60px; font-size: 14px; border-radius: 12px; display: none; }
+body.building #touchPlace { display: block; }
+
 /* ---------- TOUCH CONTROLS (mobile only) ---------- */
 #touchControls { display: none; }
 body.touch #touchControls { display: block; }
