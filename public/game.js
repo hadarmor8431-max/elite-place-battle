@@ -810,15 +810,24 @@ function computeBuildTarget() {
   const target = origin.clone().addScaledVector(dir, dist);
 
   // Snap to grid
-  const gx = Math.round(target.x / GRID);
-  const gz = Math.round(target.z / GRID);
+  let gx = Math.round(target.x / GRID);
+  let gz = Math.round(target.z / GRID);
   // Vertical: clamp to nearby Y based on player level
   const gy = Math.max(0, Math.round((me.y + 1.5) / GRID));
 
+  // For walls/ramps: if snapped cell is the player's cell, push 1 cell in look direction
+  // (Floors at player's feet are intended, so leave them alone)
+  const playerGX = Math.round(me.x / GRID);
+  const playerGZ = Math.round(me.z / GRID);
+  if ((buildMode.pieceType === 'wall' || buildMode.pieceType === 'ramp')
+      && gx === playerGX && gz === playerGZ) {
+    const lx = -Math.sin(me.rotY);
+    const lz = -Math.cos(me.rotY);
+    if (Math.abs(lx) >= Math.abs(lz)) gx += Math.sign(lx) || 1;
+    else gz += Math.sign(lz) || 1;
+  }
+
   // Rotation: snap player's yaw to cardinal
-  // me.rotY: 0 => facing -Z, π/2 => facing -X, π => facing +Z, etc.
-  // Wall should face the player, so wall's "front" should point opposite to player's facing.
-  // Map rotY to rot index: 0,1,2,3 represent rotation around Y by 0, π/2, π, 3π/2.
   let rot = ((Math.round(me.rotY / (Math.PI / 2)) % 4) + 4) % 4;
 
   return { gx, gy, gz, rot, type: buildMode.pieceType };
@@ -867,13 +876,13 @@ function placePiece() {
 }
 
 function tryEnterEditMode() {
-  if (!buildMode.active) return;
+  if (!me.alive) return;
   // Raycast against owned pieces from camera
   const origin = new THREE.Vector3();
   camera.getWorldPosition(origin);
   const dir = new THREE.Vector3();
   camera.getWorldDirection(dir);
-  const raycaster = new THREE.Raycaster(origin, dir, 0.1, 8);
+  const raycaster = new THREE.Raycaster(origin, dir, 0.1, 10);
   let bestT = Infinity;
   let target = null;
   for (const p of placedPieces.values()) {
