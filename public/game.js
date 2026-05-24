@@ -204,25 +204,67 @@ function animatePotions(t) {
 // Player models
 function makePlayerMesh(color, name) {
   const group = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.5, 1.2, 4, 8),
-    new THREE.MeshLambertMaterial({ color })
-  );
-  body.position.y = 1.1;
-  group.add(body);
-  const head = new THREE.Mesh(
-    new THREE.BoxGeometry(0.7, 0.7, 0.7),
-    new THREE.MeshLambertMaterial({ color: 0xffd9b3 })
-  );
+  const shirtMat = new THREE.MeshLambertMaterial({ color });
+  const skinMat  = new THREE.MeshLambertMaterial({ color: 0xffd9b3 });
+  const pantsMat = new THREE.MeshLambertMaterial({ color: 0x2a3450 });
+  const bootMat  = new THREE.MeshLambertMaterial({ color: 0x141420 });
+
+  // Torso
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.9, 0.45), shirtMat);
+  torso.position.y = 1.35;
+  group.add(torso);
+
+  // Head
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55), skinMat);
   head.position.y = 2.1;
   group.add(head);
-  // Front marker (small box on the chest indicating facing)
-  const front = new THREE.Mesh(
-    new THREE.BoxGeometry(0.3, 0.3, 0.15),
-    new THREE.MeshLambertMaterial({ color: 0x222222 })
-  );
-  front.position.set(0, 1.4, -0.55);
-  group.add(front);
+  // Eyes
+  const eyeGeom = new THREE.BoxGeometry(0.09, 0.09, 0.05);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+  const eyeL = new THREE.Mesh(eyeGeom, eyeMat);
+  eyeL.position.set(-0.13, 2.16, -0.29);
+  group.add(eyeL);
+  const eyeR = new THREE.Mesh(eyeGeom, eyeMat);
+  eyeR.position.set(0.13, 2.16, -0.29);
+  group.add(eyeR);
+
+  // Arms — geometry shifted so pivot is at the top (shoulder)
+  const armGeom = new THREE.CylinderGeometry(0.13, 0.13, 0.85, 8);
+  armGeom.translate(0, -0.425, 0);
+  const armL = new THREE.Mesh(armGeom, shirtMat);
+  armL.position.set(-0.55, 1.75, 0);
+  group.add(armL);
+  const armR = new THREE.Mesh(armGeom, shirtMat);
+  armR.position.set(0.55, 1.75, 0);
+  group.add(armR);
+
+  // Legs — pivot at hip
+  const legGeom = new THREE.CylinderGeometry(0.18, 0.18, 0.9, 8);
+  legGeom.translate(0, -0.45, 0);
+  const legL = new THREE.Mesh(legGeom, pantsMat);
+  legL.position.set(-0.22, 0.9, 0);
+  group.add(legL);
+  const legR = new THREE.Mesh(legGeom, pantsMat);
+  legR.position.set(0.22, 0.9, 0);
+  group.add(legR);
+
+  // Feet
+  const footGeom = new THREE.BoxGeometry(0.3, 0.12, 0.42);
+  const footL = new THREE.Mesh(footGeom, bootMat);
+  footL.position.set(-0.22, 0.06, -0.06);
+  legL.add(footL);
+  // Foot is child of leg so it swings with the leg; reset to leg's local frame
+  footL.position.set(0, -0.86, -0.06);
+  const footR = new THREE.Mesh(footGeom, bootMat);
+  footR.position.set(0, -0.86, -0.06);
+  legR.add(footR);
+
+  // Save limb refs for animation
+  group.userData.armL = armL;
+  group.userData.armR = armR;
+  group.userData.legL = legL;
+  group.userData.legR = legR;
+  group.userData.phase = Math.random() * Math.PI * 2;
 
   // Name tag (skip if empty — used for the local player)
   if (name) {
@@ -246,6 +288,26 @@ function makePlayerMesh(color, name) {
 }
 
 let myMesh = null;
+const myPrevPos = { x: 0, z: 0 };
+
+function animatePlayerMesh(mesh, walkingIntensity, t) {
+  if (!mesh || !mesh.userData) return;
+  const { armL, armR, legL, legR, phase } = mesh.userData;
+  if (!armL) return;
+  if (walkingIntensity > 0.05) {
+    const p = t * 8 + phase;
+    const swing = 0.6 * Math.min(1, walkingIntensity);
+    armL.rotation.x = Math.sin(p) * swing;
+    armR.rotation.x = -Math.sin(p) * swing;
+    legL.rotation.x = -Math.sin(p) * swing * 0.9;
+    legR.rotation.x = Math.sin(p) * swing * 0.9;
+  } else {
+    armL.rotation.x *= 0.85;
+    armR.rotation.x *= 0.85;
+    legL.rotation.x *= 0.85;
+    legR.rotation.x *= 0.85;
+  }
+}
 
 // ---------- GAME STATE ----------
 const me = {
@@ -981,6 +1043,9 @@ function update(dt) {
     myMesh.position.set(me.x, me.y, me.z);
     myMesh.rotation.y = me.rotY;
     myMesh.visible = me.alive;
+    const moved = Math.hypot(me.x - myPrevPos.x, me.z - myPrevPos.z);
+    myPrevPos.x = me.x; myPrevPos.z = me.z;
+    animatePlayerMesh(myMesh, moved / 0.15, clock.elapsedTime);
   }
 
   // Network send
@@ -997,6 +1062,7 @@ function update(dt) {
 function interpolateOthers(dt) {
   const lerp = Math.min(1, dt * 12);
   for (const op of otherPlayers.values()) {
+    const oldX = op.x, oldZ = op.z;
     op.x += (op.targetX - op.x) * lerp;
     op.y += (op.targetY - op.y) * lerp;
     op.z += (op.targetZ - op.z) * lerp;
@@ -1006,6 +1072,8 @@ function interpolateOthers(dt) {
     op.rotY += dr * lerp;
     op.mesh.position.set(op.x, op.y, op.z);
     op.mesh.rotation.y = op.rotY;
+    const movedR = Math.hypot(op.x - oldX, op.z - oldZ);
+    animatePlayerMesh(op.mesh, movedR / (dt * 6), clock.elapsedTime);
   }
 }
 

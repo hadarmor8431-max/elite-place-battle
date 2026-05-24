@@ -234,6 +234,21 @@ canvas#game {
   font-weight: 700;
 }
 
+.weapon .wIcon {
+  display: block;
+  width: 54px;
+  height: 18px;
+  margin: 4px auto 2px;
+  color: #c5d3e8;
+  opacity: 0.75;
+  transition: color 0.15s, opacity 0.15s, transform 0.15s;
+}
+.weapon.active .wIcon {
+  color: #6bb7ff;
+  opacity: 1;
+  transform: scale(1.08);
+}
+
 .weapon .cooldownBar {
   position: absolute;
   bottom: 0;
