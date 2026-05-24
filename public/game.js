@@ -186,13 +186,15 @@ function buildPieceMesh(piece, opts = {}) {
   const g = new THREE.Group();
   const half = GRID / 2;
   const tiles = piece.tiles !== undefined ? piece.tiles : 0x1FF;
+  const cellBottom = piece.gy * GRID;
+  const cellCenter = cellBottom + half;
 
   if (piece.type === 'ramp') {
-    // Tilted slab acts as a ramp going from floor at front to ceiling at back
+    // Tilted slab: front (toward player) low, back (away from player) high
     const slab = new THREE.Mesh(new THREE.BoxGeometry(GRID, 0.25, GRID * Math.SQRT2), mat);
-    slab.rotation.x = -Math.PI / 4;
+    slab.rotation.x = Math.PI / 4;
     g.add(slab);
-    g.position.set(piece.gx * GRID, piece.gy * GRID, piece.gz * GRID);
+    g.position.set(piece.gx * GRID, cellCenter, piece.gz * GRID);
     g.rotation.y = (piece.rot || 0) * Math.PI / 2;
     return g;
   }
@@ -223,7 +225,7 @@ function buildPieceMesh(piece, opts = {}) {
     }
   }
   const cx = piece.gx * GRID;
-  const cy = piece.gy * GRID + (piece.type === 'floor' ? -half : 0);
+  const cy = piece.type === 'floor' ? cellBottom : cellCenter;
   const cz = piece.gz * GRID;
   g.position.set(cx, cy, cz);
   g.rotation.y = (piece.rot || 0) * Math.PI / 2;
@@ -376,9 +378,10 @@ function makePlayerMesh(color, name) {
   group.userData.legR = legR;
   group.userData.phase = Math.random() * Math.PI * 2;
 
-  // Weapon holder — held in front of chest, slightly right
+  // Weapon holder — held at the right shoulder, past the torso edge, slightly forward
   const weaponHolder = new THREE.Group();
-  weaponHolder.position.set(0.18, 1.35, -0.6);
+  weaponHolder.position.set(0.55, 1.45, -0.4);
+  weaponHolder.scale.setScalar(1.15);
   group.add(weaponHolder);
   group.userData.weaponHolder = weaponHolder;
   group.userData.heldWeapon = null;

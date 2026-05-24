@@ -156,19 +156,22 @@ function pieceKey(gx, gy, gz, type, rot) {
 }
 
 function pieceAABB(p) {
-  const cx = p.gx * GRID, cy = p.gy * GRID, cz = p.gz * GRID;
+  const cx = p.gx * GRID, cz = p.gz * GRID;
   const half = GRID / 2;
+  // gy * GRID = bottom of cell; floor sits at the bottom, others fill the cell
+  const cellBottom = p.gy * GRID;
+  const cellCenter = cellBottom + half;
   if (p.type === 'floor') {
-    return { minX: cx - half, maxX: cx + half, minY: cy - half - 0.15, maxY: cy - half + 0.15, minZ: cz - half, maxZ: cz + half };
+    return { minX: cx - half, maxX: cx + half, minY: cellBottom - 0.15, maxY: cellBottom + 0.15, minZ: cz - half, maxZ: cz + half };
   }
   if (p.type === 'ramp') {
-    return { minX: cx - half, maxX: cx + half, minY: cy - half, maxY: cy + half, minZ: cz - half, maxZ: cz + half };
+    return { minX: cx - half, maxX: cx + half, minY: cellBottom, maxY: cellBottom + GRID, minZ: cz - half, maxZ: cz + half };
   }
   // wall
   if (p.rot === 0 || p.rot === 2) {
-    return { minX: cx - half, maxX: cx + half, minY: cy - half, maxY: cy + half, minZ: cz - 0.15, maxZ: cz + 0.15 };
+    return { minX: cx - half, maxX: cx + half, minY: cellBottom, maxY: cellBottom + GRID, minZ: cz - 0.15, maxZ: cz + 0.15 };
   } else {
-    return { minX: cx - 0.15, maxX: cx + 0.15, minY: cy - half, maxY: cy + half, minZ: cz - half, maxZ: cz + half };
+    return { minX: cx - 0.15, maxX: cx + 0.15, minY: cellBottom, maxY: cellBottom + GRID, minZ: cz - half, maxZ: cz + half };
   }
 }
 
