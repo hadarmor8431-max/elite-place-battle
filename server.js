@@ -21,9 +21,6 @@ const MAX_SHIELD = 100;
 const SHIELD_PER_POTION = 25;
 const POTION_COUNT = 30;
 const PICKUP_RADIUS = 1.8;
-const GRID = 4;
-const PIECE_HP = 100;
-const MAX_PIECE_RANGE = 14;
 
 const app = express();
 // Disable caching so deploys are picked up immediately by clients
@@ -44,8 +41,6 @@ let gameState = 'waiting'; // waiting | playing | ended
 let zone = { cx: 0, cz: 0, r: MAP_SIZE / 2 };
 let potions = []; // {id, x, z}
 let nextPotionId = 1;
-const pieces = new Map(); // key -> {id, type, gx, gy, gz, rot, hp, tiles, ownerId, key}
-let nextPieceId = 1;
 let lastShrink = Date.now();
 let lastTick = Date.now();
 let lastZoneDamage = Date.now();
@@ -113,7 +108,6 @@ function startGame() {
   lastZoneDamage = Date.now();
   winnerInfo = null;
   potions = generatePotions();
-  pieces.clear();
   for (const p of players.values()) {
     const pos = spawnPos();
     p.x = pos.x; p.y = pos.y; p.z = pos.z;
@@ -122,7 +116,7 @@ function startGame() {
     p.alive = true;
     p.rotY = 0;
   }
-  broadcast({ type: 'gamestart', zone, obstacles, potions, pieces: [...pieces.values()].map(piecePayload) });
+  broadcast({ type: 'gamestart', zone, obstacles, potions });
 }
 
 function generatePotions() {
@@ -153,81 +147,6 @@ function applyDamage(p, dmg) {
     dmg -= absorbed;
   }
   if (dmg > 0) p.hp -= dmg;
-}
-
-function pieceKey(gx, gy, gz, type, rot) {
-  if (type === 'wall') return `${gx},${gy},${gz},wall,${rot}`;
-  return `${gx},${gy},${gz},${type}`;
-}
-
-function pieceAABB(p) {
-  const cx = p.gx * GRID, cz = p.gz * GRID;
-  const half = GRID / 2;
-  // gy * GRID = bottom of cell; floor sits at the bottom, others fill the cell
-  const cellBottom = p.gy * GRID;
-  const cellCenter = cellBottom + half;
-  if (p.type === 'floor') {
-    return { minX: cx - half, maxX: cx + half, minY: cellBottom - 0.15, maxY: cellBottom + 0.15, minZ: cz - half, maxZ: cz + half };
-  }
-  if (p.type === 'ramp') {
-    return { minX: cx - half, maxX: cx + half, minY: cellBottom, maxY: cellBottom + GRID, minZ: cz - half, maxZ: cz + half };
-  }
-  // wall
-  if (p.rot === 0 || p.rot === 2) {
-    return { minX: cx - half, maxX: cx + half, minY: cellBottom, maxY: cellBottom + GRID, minZ: cz - 0.15, maxZ: cz + 0.15 };
-  } else {
-    return { minX: cx - 0.15, maxX: cx + 0.15, minY: cellBottom, maxY: cellBottom + GRID, minZ: cz - half, maxZ: cz + half };
-  }
-}
-
-function piecePayload(p) {
-  return { id: p.id, type: p.type, gx: p.gx, gy: p.gy, gz: p.gz, rot: p.rot, hp: p.hp, tiles: p.tiles, ownerId: p.ownerId };
-}
-
-function handleBuild(playerId, msg) {
-  const player = players.get(playerId);
-  if (!player || !player.alive || gameState !== 'playing') return;
-  const type = msg.pieceType === 'wall' || msg.pieceType === 'floor' || msg.pieceType === 'ramp' ? msg.pieceType : null;
-  if (!type) return;
-  const gx = msg.gx | 0, gy = msg.gy | 0, gz = msg.gz | 0;
-  if (gy < 0 || gy > 6) return;
-  const halfMap = MAP_SIZE / 2 / GRID;
-  if (Math.abs(gx) > halfMap || Math.abs(gz) > halfMap) return;
-  const rot = ((msg.rot | 0) % 4 + 4) % 4;
-  const k = pieceKey(gx, gy, gz, type, rot);
-  if (pieces.has(k)) return;
-  // Range from player
-  const cx = gx * GRID, cz = gz * GRID;
-  if (Math.hypot(player.x - cx, player.z - cz) > MAX_PIECE_RANGE) return;
-  const piece = { id: nextPieceId++, type, gx, gy, gz, rot, hp: PIECE_HP, tiles: 0x1FF, ownerId: playerId, key: k };
-  pieces.set(k, piece);
-  broadcast({ type: 'piece_placed', piece: piecePayload(piece) });
-}
-
-function handleEditPiece(playerId, msg) {
-  const player = players.get(playerId);
-  if (!player) return;
-  let piece = null;
-  for (const p of pieces.values()) if (p.id === msg.pieceId) { piece = p; break; }
-  if (!piece || piece.ownerId !== playerId) return;
-  if (piece.type === 'ramp') return; // ramps not editable
-  piece.tiles = (msg.tiles | 0) & 0x1FF;
-  if (piece.tiles === 0) {
-    pieces.delete(piece.key);
-    broadcast({ type: 'piece_destroyed', pieceId: piece.id });
-  } else {
-    broadcast({ type: 'piece_edited', pieceId: piece.id, tiles: piece.tiles });
-  }
-}
-
-function damagePiece(piece, dmg) {
-  piece.hp -= dmg;
-  if (piece.hp <= 0) {
-    pieces.delete(piece.key);
-    broadcast({ type: 'piece_destroyed', pieceId: piece.id });
-  } else {
-    broadcast({ type: 'piece_hp', pieceId: piece.id, hp: piece.hp });
-  }
 }
 
 function endGame(winnerId) {
@@ -399,30 +318,16 @@ function handleShoot(shooterId, msg) {
   const pelletResults = [];
   const damageByTarget = new Map();
 
-  const pieceHits = []; // {piece, dmg}
   for (let pi = 0; pi < numPellets; pi++) {
     const [pdx, pdy, pdz] = numPellets > 1 ? applySpread(ndx, ndy, ndz, spread) : [ndx, ndy, ndz];
     let bestT = rayHitsObstacle(ox, oy, oz, pdx, pdy, pdz, maxRange);
     let hitId = null;
-    let hitPiece = null;
-    // Test pieces
-    for (const piece of pieces.values()) {
-      const a = pieceAABB(piece);
-      const t = rayAABB(ox, oy, oz, pdx, pdy, pdz, a.minX, a.minY, a.minZ, a.maxX, a.maxY, a.maxZ);
-      if (t !== null && t > 0 && t < bestT) {
-        bestT = t;
-        hitPiece = piece;
-        hitId = null;
-      }
-    }
-    // Test players
     for (const [id, p] of players) {
       if (id === shooterId || !p.alive) continue;
       const t = raySphere(ox, oy, oz, pdx, pdy, pdz, p.x, p.y + 1, p.z, 0.9);
       if (t !== null && t > 0 && t < bestT) {
         bestT = t;
         hitId = id;
-        hitPiece = null;
       }
     }
     pelletResults.push({
@@ -431,8 +336,6 @@ function handleShoot(shooterId, msg) {
     });
     if (hitId !== null) {
       damageByTarget.set(hitId, (damageByTarget.get(hitId) || 0) + w.dmg);
-    } else if (hitPiece) {
-      pieceHits.push(hitPiece);
     }
   }
 
@@ -446,11 +349,6 @@ function handleShoot(shooterId, msg) {
     srotY: shooter.rotY,
     pellets: pelletResults,
   });
-
-  // Damage pieces (each pellet hit deals w.dmg)
-  for (const piece of pieceHits) {
-    damagePiece(piece, w.dmg);
-  }
 
   // Apply accumulated damage (multiple pellets on one target = sum)
   for (const [hitId, totalDmg] of damageByTarget) {
@@ -510,7 +408,6 @@ wss.on('connection', (ws) => {
     obstacles,
     zone,
     potions,
-    pieces: [...pieces.values()].map(piecePayload),
     mapSize: MAP_SIZE,
     gameState,
     winner: winnerInfo,
@@ -547,19 +444,6 @@ wss.on('connection', (ws) => {
       handleShoot(id, msg);
     } else if (msg.type === 'weapon') {
       if (WEAPONS[msg.weapon]) player.currentWeapon = msg.weapon;
-    } else if (msg.type === 'build') {
-      handleBuild(id, msg);
-    } else if (msg.type === 'piece_edit') {
-      handleEditPiece(id, msg);
-    } else if (msg.type === 'clearMyPieces') {
-      const toRemove = [];
-      for (const [key, p] of pieces) {
-        if (p.ownerId === id) toRemove.push({ key, pid: p.id });
-      }
-      for (const { key, pid } of toRemove) {
-        pieces.delete(key);
-        broadcast({ type: 'piece_destroyed', pieceId: pid });
-      }
     }
   });
 

@@ -22,9 +22,8 @@
       <button id="playBtn">PLAY</button>
       <div class="howto desktopOnly">
         <div><b>WASD</b> move &nbsp; <b>Mouse</b> look &nbsp; <b>Left click</b> shoot</div>
-        <div><b>1/2/3</b> weapon &nbsp; <b>Z/X/C</b> build (wall/floor/ramp) &nbsp; <b>G</b> edit own piece</div>
-        <div><b>Space</b> jump &nbsp; <b>Shift</b> sprint &nbsp; <b>Esc</b> menu/cancel edit</div>
-        <div>Walk over blue potions for shield. Stay in the blue zone!</div>
+        <div><b>1/2/3</b> switch weapon &nbsp; <b>Space</b> jump &nbsp; <b>Shift</b> sprint</div>
+        <div><b>Esc</b> menu &nbsp; Walk over blue potions for shield. Stay in the blue zone!</div>
       </div>
       <div class="howto touchOnly">
         <div><b>Left half</b>: drag joystick to move (full push = sprint)</div>
@@ -78,21 +77,11 @@
       </div>
     </div>
 
-    <div id="buildBar">
-      <div class="buildPiece" data-piece="wall"><div class="bKey">Z</div><div class="bName">WALL</div></div>
-      <div class="buildPiece" data-piece="floor"><div class="bKey">X</div><div class="bName">FLOOR</div></div>
-      <div class="buildPiece" data-piece="ramp"><div class="bKey">C</div><div class="bName">RAMP</div></div>
-    </div>
-    <div id="buildHint">Build mode &mdash; click to place &middot; G edit owned piece &middot; 1/2/3 back to weapon</div>
-    <div id="editHint">Edit mode &mdash; click tile to toggle &middot; G confirm &middot; Esc cancel</div>
-
     <div id="touchControls">
       <div id="joystickBase"><div id="joystickKnob"></div></div>
       <button class="touchBtn" id="touchFire">FIRE</button>
       <button class="touchBtn" id="touchJump">JUMP</button>
       <button class="touchBtn small" id="touchPause">&#9776;</button>
-      <button class="touchBtn small" id="touchBuild">&#x1F528;</button>
-      <button class="touchBtn small" id="touchPlace">PLACE</button>
     </div>
     <div id="minimap"><canvas id="minimapCanvas" width="160" height="160"></canvas></div>
     <div id="deathOverlay" class="hidden">
@@ -114,7 +103,6 @@
         <div class="menuSub">Online match — the world keeps moving</div>
         <button class="menuBtn primary" data-act="resume">RESUME</button>
         <button class="menuBtn" data-act="settings">SETTINGS</button>
-        <button class="menuBtn" data-act="clear-builds">CLEAR MY BUILDS</button>
         <button class="menuBtn danger" data-act="quit">QUIT TO LOBBY</button>
       </div>
     </div>
@@ -148,27 +136,12 @@
           <label class="toggle"><input type="checkbox" id="leftShoulder" /> Left-shoulder camera</label>
         </div>
 
-        <div class="sectionDivider">BUILDING</div>
-
-        <div class="setting">
-          <div class="settingLabel">Build Reach <span id="reachVal">5.0</span>m</div>
-          <input type="range" id="reachSlider" min="30" max="100" value="50" />
-        </div>
-
-        <div class="setting toggleRow">
-          <label class="toggle"><input type="checkbox" id="autoSwitchAR" /> Auto-switch to AR after placing</label>
-        </div>
-
         <div class="sectionDivider">KEY BINDINGS</div>
 
         <div class="keyBindings">
           <div class="kbRow"><span>Weapon AR</span><button class="keybind" data-bind="weaponAR">1</button></div>
           <div class="kbRow"><span>Weapon Pump</span><button class="keybind" data-bind="weaponPump">2</button></div>
           <div class="kbRow"><span>Weapon Sniper</span><button class="keybind" data-bind="weaponSniper">3</button></div>
-          <div class="kbRow"><span>Build Wall</span><button class="keybind" data-bind="buildWall">Z</button></div>
-          <div class="kbRow"><span>Build Floor</span><button class="keybind" data-bind="buildFloor">X</button></div>
-          <div class="kbRow"><span>Build Ramp</span><button class="keybind" data-bind="buildRamp">C</button></div>
-          <div class="kbRow"><span>Edit Piece</span><button class="keybind" data-bind="editPiece">G</button></div>
         </div>
 
         <div class="settingsActions">
