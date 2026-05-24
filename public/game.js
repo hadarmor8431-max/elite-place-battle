@@ -266,6 +266,14 @@ function makePlayerMesh(color, name) {
   group.userData.legR = legR;
   group.userData.phase = Math.random() * Math.PI * 2;
 
+  // Weapon holder — held in front of chest, slightly right
+  const weaponHolder = new THREE.Group();
+  weaponHolder.position.set(0.18, 1.35, -0.6);
+  group.add(weaponHolder);
+  group.userData.weaponHolder = weaponHolder;
+  group.userData.heldWeapon = null;
+  setPlayerWeapon(group, 'ar');
+
   // Name tag (skip if empty — used for the local player)
   if (name) {
     const canvas2 = document.createElement('canvas');
@@ -290,20 +298,69 @@ function makePlayerMesh(color, name) {
 let myMesh = null;
 const myPrevPos = { x: 0, z: 0 };
 
+function buildWeaponMesh(name) {
+  const g = new THREE.Group();
+  const black = new THREE.MeshLambertMaterial({ color: 0x161616 });
+  const gray  = new THREE.MeshLambertMaterial({ color: 0x444450 });
+  const wood  = new THREE.MeshLambertMaterial({ color: 0x4a3018 });
+  const dark  = new THREE.MeshLambertMaterial({ color: 0x222a36 });
+  const add = (geom, mat, x, y, z) => {
+    const m = new THREE.Mesh(geom, mat);
+    m.position.set(x, y, z);
+    g.add(m);
+  };
+  if (name === 'ar') {
+    add(new THREE.BoxGeometry(0.10, 0.15, 0.55), gray,  0,     0,    0);     // receiver
+    add(new THREE.BoxGeometry(0.05, 0.05, 0.35), black, 0,     0,   -0.45);  // barrel
+    add(new THREE.BoxGeometry(0.08, 0.18, 0.10), black, 0,    -0.16, 0.05);  // magazine
+    add(new THREE.BoxGeometry(0.08, 0.12, 0.22), gray,  0,     0,    0.38);  // stock
+    add(new THREE.BoxGeometry(0.04, 0.05, 0.08), black, 0,     0.11,-0.05);  // sight
+  } else if (name === 'pump') {
+    add(new THREE.BoxGeometry(0.13, 0.16, 0.42), wood,  0,     0,    0);     // body
+    add(new THREE.BoxGeometry(0.08, 0.08, 0.32), black, 0,     0.02,-0.37);  // barrel
+    add(new THREE.BoxGeometry(0.10, 0.13, 0.26), wood,  0,     0,    0.34);  // stock
+    add(new THREE.BoxGeometry(0.11, 0.06, 0.22), gray,  0,    -0.11,-0.15);  // pump
+  } else if (name === 'sniper') {
+    add(new THREE.BoxGeometry(0.08, 0.13, 0.42), dark,  0,     0,    0);     // receiver
+    add(new THREE.BoxGeometry(0.04, 0.04, 0.60), black, 0,     0,   -0.51);  // long barrel
+    add(new THREE.BoxGeometry(0.08, 0.12, 0.30), dark,  0,     0,    0.36);  // stock
+    add(new THREE.BoxGeometry(0.06, 0.10, 0.26), black, 0,     0.13,-0.05);  // scope body
+    add(new THREE.BoxGeometry(0.04, 0.04, 0.02), new THREE.MeshBasicMaterial({ color: 0x000000 }), 0, 0.13, -0.19); // scope lens
+    add(new THREE.BoxGeometry(0.03, 0.06, 0.04), black, 0,     0.07,-0.05);  // scope mount
+  }
+  return g;
+}
+
+function setPlayerWeapon(mesh, weapon) {
+  if (!mesh || !mesh.userData || !mesh.userData.weaponHolder) return;
+  if (mesh.userData.heldWeapon === weapon) return;
+  const holder = mesh.userData.weaponHolder;
+  while (holder.children.length) {
+    const c = holder.children[0];
+    holder.remove(c);
+    c.traverse && c.traverse((n) => {
+      if (n.geometry) n.geometry.dispose();
+      if (n.material) n.material.dispose();
+    });
+  }
+  holder.add(buildWeaponMesh(weapon));
+  mesh.userData.heldWeapon = weapon;
+}
+
 function animatePlayerMesh(mesh, walkingIntensity, t) {
   if (!mesh || !mesh.userData) return;
   const { armL, armR, legL, legR, phase } = mesh.userData;
   if (!armL) return;
+  // Arms locked in "holding weapon forward" pose (don't swing — they hold the gun)
+  armL.rotation.x = 1.3;
+  armR.rotation.x = 1.3;
+  // Legs still swing during walk
   if (walkingIntensity > 0.05) {
     const p = t * 8 + phase;
-    const swing = 0.6 * Math.min(1, walkingIntensity);
-    armL.rotation.x = Math.sin(p) * swing;
-    armR.rotation.x = -Math.sin(p) * swing;
-    legL.rotation.x = -Math.sin(p) * swing * 0.9;
-    legR.rotation.x = Math.sin(p) * swing * 0.9;
+    const swing = 0.7 * Math.min(1, walkingIntensity);
+    legL.rotation.x = -Math.sin(p) * swing;
+    legR.rotation.x = Math.sin(p) * swing;
   } else {
-    armL.rotation.x *= 0.85;
-    armR.rotation.x *= 0.85;
     legL.rotation.x *= 0.85;
     legR.rotation.x *= 0.85;
   }
@@ -385,7 +442,8 @@ document.addEventListener('pointerlockchange', () => {
 
 document.addEventListener('mousemove', (e) => {
   if (!pointerLocked) return;
-  const sens = 0.0025 * settings.sensitivity;
+  const scopedMult = isScoped() ? 0.35 : 1;
+  const sens = 0.0025 * settings.sensitivity * scopedMult;
   me.rotY -= e.movementX * sens;
   me.pitch += e.movementY * sens * (settings.invertY ? 1 : -1);
   me.pitch = Math.max(-1.2, Math.min(1.2, me.pitch));
@@ -450,7 +508,8 @@ if (isTouchDevice) {
         const moveY = t.clientY - look.lastY;
         look.lastX = t.clientX;
         look.lastY = t.clientY;
-        const sens = 0.005 * settings.sensitivity;
+        const scopedMult = isScoped() ? 0.35 : 1;
+        const sens = 0.005 * settings.sensitivity * scopedMult;
         me.rotY -= moveX * sens;
         me.pitch += moveY * sens * (settings.invertY ? 1 : -1);
         me.pitch = Math.max(-1.2, Math.min(1.2, me.pitch));
@@ -526,6 +585,11 @@ function selectWeapon(name) {
   document.querySelectorAll('.weapon').forEach((el) => {
     el.classList.toggle('active', el.dataset.weapon === name);
   });
+  if (myMesh) setPlayerWeapon(myMesh, name);
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'weapon', weapon: name }));
+  }
+  updateScope();
 }
 
 // ---------- SHOOTING ----------
@@ -834,6 +898,7 @@ function handleMsg(msg) {
       me.alive = false;
       deathOverlay.classList.remove('hidden');
       closeMenus();
+      updateScope();
       if (pointerLocked) document.exitPointerLock();
     }
   } else if (msg.type === 'zone') {
@@ -849,6 +914,7 @@ function handleMsg(msg) {
     me.alive = true;
     me.hp = 100;
     me.shield = 0;
+    updateScope();
     clearAllPotions();
     if (msg.potions) {
       for (const p of msg.potions) spawnPotion(p.id, p.x, p.z);
@@ -910,6 +976,7 @@ function updateFromState(playersArr) {
     op.targetX = p.x; op.targetY = p.y; op.targetZ = p.z; op.targetRot = p.rotY;
     op.alive = p.alive;
     op.mesh.visible = p.alive;
+    if (p.weapon) setPlayerWeapon(op.mesh, p.weapon);
   }
   // Remove disconnected
   for (const [id, op] of otherPlayers) {
@@ -1185,7 +1252,17 @@ loop();
 
 // ---------- MENU & SETTINGS WIRING ----------
 function applySettings() {
-  camera.fov = settings.fov;
+  updateScope();
+}
+
+function isScoped() {
+  return currentWeapon === 'sniper' && me.alive;
+}
+
+function updateScope() {
+  const scoped = isScoped();
+  document.body.classList.toggle('scoped', scoped);
+  camera.fov = scoped ? 25 : settings.fov;
   camera.updateProjectionMatrix();
 }
 

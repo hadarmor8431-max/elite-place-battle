@@ -221,7 +221,7 @@ function tick() {
   // Broadcast state
   const snapshot = [];
   for (const [id, p] of players) {
-    snapshot.push({ id, name: p.name, x: p.x, y: p.y, z: p.z, rotY: p.rotY, hp: p.hp, shield: p.shield, alive: p.alive });
+    snapshot.push({ id, name: p.name, x: p.x, y: p.y, z: p.z, rotY: p.rotY, hp: p.hp, shield: p.shield, alive: p.alive, weapon: p.currentWeapon });
   }
   broadcast({ type: 'state', players: snapshot, t: now });
 }
@@ -301,6 +301,7 @@ function handleShoot(shooterId, msg) {
   // Allow 30ms grace for network jitter so client-locked cooldowns still pass
   if (shooter.lastShot && now - shooter.lastShot < w.cooldown - 30) return;
   shooter.lastShot = now;
+  shooter.currentWeapon = wname;
   const { ox, oy, oz, dx, dy, dz } = msg;
   // Normalize aim direction
   const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
@@ -392,6 +393,7 @@ wss.on('connection', (ws) => {
     shield: 0,
     alive: false,
     lastShot: 0,
+    currentWeapon: 'ar',
   };
   players.set(id, p);
 
@@ -435,6 +437,8 @@ wss.on('connection', (ws) => {
       player.rotY = +msg.rotY || 0;
     } else if (msg.type === 'shoot') {
       handleShoot(id, msg);
+    } else if (msg.type === 'weapon') {
+      if (WEAPONS[msg.weapon]) player.currentWeapon = msg.weapon;
     }
   });
 
