@@ -26,7 +26,12 @@ const PIECE_HP = 100;
 const MAX_PIECE_RANGE = 14;
 
 const app = express();
-app.use(express.static(path.join(__dirname, 'public')));
+// Disable caching so deploys are picked up immediately by clients
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res) => {
+    res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  },
+}));
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
