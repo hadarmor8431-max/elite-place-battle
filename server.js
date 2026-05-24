@@ -551,6 +551,15 @@ wss.on('connection', (ws) => {
       handleBuild(id, msg);
     } else if (msg.type === 'piece_edit') {
       handleEditPiece(id, msg);
+    } else if (msg.type === 'clearMyPieces') {
+      const toRemove = [];
+      for (const [key, p] of pieces) {
+        if (p.ownerId === id) toRemove.push({ key, pid: p.id });
+      }
+      for (const { key, pid } of toRemove) {
+        pieces.delete(key);
+        broadcast({ type: 'piece_destroyed', pieceId: pid });
+      }
     }
   });
 

@@ -1715,6 +1715,11 @@ document.querySelectorAll('[data-act]').forEach((btn) => {
       else canvas.requestPointerLock();
     }
     else if (act === 'settings') openSettings();
+    else if (act === 'clear-builds') {
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'clearMyPieces' }));
+      closeMenus();
+      if (!isTouchDevice) canvas.requestPointerLock();
+    }
     else if (act === 'back') backToPause();
     else if (act === 'reset') {
       Object.assign(settings, DEFAULT_SETTINGS);
