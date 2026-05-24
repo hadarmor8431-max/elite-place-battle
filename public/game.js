@@ -392,7 +392,7 @@ function colorFor(id) { return COLORS[id % COLORS.length]; }
 
 // ---------- INPUT ----------
 const keys = {};
-let mouseDown = false;
+let mouseHeld = false;
 let pointerLocked = false;
 
 // Touch / mobile
@@ -451,8 +451,13 @@ document.addEventListener('mousemove', (e) => {
 
 document.addEventListener('mousedown', (e) => {
   if (!pointerLocked || e.button !== 0 || menuOpen) return;
-  fireShot();
+  mouseHeld = true;
+  fireShot(); // immediate first shot (one click = one shot for pump/sniper)
 });
+document.addEventListener('mouseup', (e) => {
+  if (e.button === 0) mouseHeld = false;
+});
+window.addEventListener('blur', () => { mouseHeld = false; });
 
 // ---------- TOUCH HANDLERS ----------
 if (isTouchDevice) {
@@ -536,6 +541,7 @@ if (isTouchDevice) {
     e.preventDefault(); e.stopPropagation();
     touchFiring = true;
     ensureAudio();
+    fireShot(); // immediate first shot for pump/sniper (single tap = single shot)
   });
   fireBtn.addEventListener('touchend', (e) => {
     e.preventDefault(); e.stopPropagation();
@@ -1054,8 +1060,11 @@ function update(dt) {
   // Normalize touch joystick magnitude (don't exceed 1)
   if (stickMag > 1) { mx /= stickMag; mz /= stickMag; }
 
-  // Continuous fire while touch button is held
-  if (!inputBlocked && touchFiring) fireShot();
+  // Continuous fire on hold — AR only (pump/sniper require a fresh click/tap)
+  if (!inputBlocked && currentWeapon === 'ar') {
+    if (mouseHeld && pointerLocked) fireShot();
+    if (touchFiring) fireShot();
+  }
 
   // Rotate movement by player rotation
   const cos = Math.cos(me.rotY), sin = Math.sin(me.rotY);
