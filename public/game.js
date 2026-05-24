@@ -24,6 +24,15 @@ if (savedName) nameInput.value = savedName;
 
 // ---------- SETTINGS ----------
 const SETTINGS_KEY = 'epbSettings';
+const DEFAULT_KEYBINDS = {
+  weaponAR: 'Digit1',
+  weaponPump: 'Digit2',
+  weaponSniper: 'Digit3',
+  buildWall: 'KeyZ',
+  buildFloor: 'KeyX',
+  buildRamp: 'KeyC',
+  editPiece: 'KeyG',
+};
 const DEFAULT_SETTINGS = {
   sensitivity: 1.0,    // multiplier on base 0.0025
   fov: 75,
@@ -31,12 +40,35 @@ const DEFAULT_SETTINGS = {
   camDist: 5.0,
   invertY: false,
   leftShoulder: false,
+  buildRange: 5.0,
+  autoSwitchAR: false,
+  keyBindings: { ...DEFAULT_KEYBINDS },
 };
-const settings = { ...DEFAULT_SETTINGS };
+const settings = { ...DEFAULT_SETTINGS, keyBindings: { ...DEFAULT_KEYBINDS } };
 try {
   const stored = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
   Object.assign(settings, stored);
+  // Merge keyBindings so newly added bindings get their default in old saves
+  settings.keyBindings = { ...DEFAULT_KEYBINDS, ...(stored.keyBindings || {}) };
 } catch {}
+
+function keyLabel(code) {
+  if (!code) return '?';
+  if (code.startsWith('Key')) return code.slice(3);
+  if (code.startsWith('Digit')) return code.slice(5);
+  if (code === 'Space') return 'Space';
+  if (code === 'ShiftLeft') return 'L Shift';
+  if (code === 'ShiftRight') return 'R Shift';
+  if (code === 'ControlLeft') return 'L Ctrl';
+  if (code === 'ControlRight') return 'R Ctrl';
+  if (code === 'AltLeft') return 'L Alt';
+  if (code === 'AltRight') return 'R Alt';
+  if (code === 'Escape') return 'Esc';
+  if (code === 'Enter') return 'Enter';
+  if (code === 'Tab') return 'Tab';
+  if (code.startsWith('Arrow')) return code.slice(5);
+  return code;
+}
 function saveSettings() {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
@@ -489,13 +521,14 @@ let touchFiring = false;
 window.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'Space') e.preventDefault();
-  if (e.code === 'Digit1') selectWeapon('ar');
-  else if (e.code === 'Digit2') selectWeapon('pump');
-  else if (e.code === 'Digit3') selectWeapon('sniper');
-  else if (e.code === 'KeyZ') selectBuildPiece('wall');
-  else if (e.code === 'KeyX') selectBuildPiece('floor');
-  else if (e.code === 'KeyC') selectBuildPiece('ramp');
-  else if (e.code === 'KeyG') {
+  const kb = settings.keyBindings;
+  if (e.code === kb.weaponAR) selectWeapon('ar');
+  else if (e.code === kb.weaponPump) selectWeapon('pump');
+  else if (e.code === kb.weaponSniper) selectWeapon('sniper');
+  else if (e.code === kb.buildWall) selectBuildPiece('wall');
+  else if (e.code === kb.buildFloor) selectBuildPiece('floor');
+  else if (e.code === kb.buildRamp) selectBuildPiece('ramp');
+  else if (e.code === kb.editPiece) {
     if (editMode.active) exitEditMode(true);
     else tryEnterEditMode();
   }
@@ -770,7 +803,7 @@ function computeBuildTarget() {
   camera.getWorldPosition(origin);
   const dir = new THREE.Vector3();
   camera.getWorldDirection(dir);
-  const dist = 5;
+  const dist = settings.buildRange || 5;
   const target = origin.clone().addScaledVector(dir, dist);
 
   // Snap to grid
@@ -827,6 +860,7 @@ function placePiece() {
   if (ws && ws.readyState === 1) {
     ws.send(JSON.stringify({ type: 'build', pieceType: t.type, gx: t.gx, gy: t.gy, gz: t.gz, rot: t.rot }));
   }
+  if (settings.autoSwitchAR) selectWeapon('ar');
 }
 
 function tryEnterEditMode() {
@@ -1593,6 +1627,48 @@ function syncSettingsUI() {
   distVal.textContent = (distSlider.value / 10).toFixed(1);
   invertY.checked = settings.invertY;
   leftShoulder.checked = settings.leftShoulder;
+  const reachSlider = document.getElementById('reachSlider');
+  const reachVal = document.getElementById('reachVal');
+  const autoSwitchAR = document.getElementById('autoSwitchAR');
+  if (reachSlider) { reachSlider.value = Math.round(settings.buildRange * 10); reachVal.textContent = settings.buildRange.toFixed(1); }
+  if (autoSwitchAR) autoSwitchAR.checked = !!settings.autoSwitchAR;
+  document.querySelectorAll('[data-bind]').forEach((btn) => {
+    btn.textContent = keyLabel(settings.keyBindings[btn.dataset.bind]);
+    btn.classList.remove('rebinding');
+  });
+}
+
+function syncHotkeyChips() {
+  const kb = settings.keyBindings;
+  const setChip = (sel, code) => { const el = document.querySelector(sel); if (el) el.textContent = keyLabel(code); };
+  setChip('.weapon[data-weapon="ar"] .wKey', kb.weaponAR);
+  setChip('.weapon[data-weapon="pump"] .wKey', kb.weaponPump);
+  setChip('.weapon[data-weapon="sniper"] .wKey', kb.weaponSniper);
+  setChip('.buildPiece[data-piece="wall"] .bKey', kb.buildWall);
+  setChip('.buildPiece[data-piece="floor"] .bKey', kb.buildFloor);
+  setChip('.buildPiece[data-piece="ramp"] .bKey', kb.buildRamp);
+}
+
+let rebindingHandler = null;
+function startRebind(action, button) {
+  if (rebindingHandler) { window.removeEventListener('keydown', rebindingHandler, true); rebindingHandler = null; }
+  document.querySelectorAll('.keybind').forEach((b) => b.classList.remove('rebinding'));
+  button.classList.add('rebinding');
+  button.textContent = 'Press a key...';
+  rebindingHandler = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    window.removeEventListener('keydown', rebindingHandler, true);
+    rebindingHandler = null;
+    if (e.code !== 'Escape') {
+      settings.keyBindings[action] = e.code;
+      saveSettings();
+      syncHotkeyChips();
+    }
+    button.classList.remove('rebinding');
+    button.textContent = keyLabel(settings.keyBindings[action]);
+  };
+  window.addEventListener('keydown', rebindingHandler, true);
 }
 
 function openPauseMenu() {
@@ -1679,8 +1755,35 @@ leftShoulder.addEventListener('change', () => {
   saveSettings();
 });
 
+// Build settings wiring
+const reachSliderEl = document.getElementById('reachSlider');
+const reachValEl = document.getElementById('reachVal');
+const autoSwitchAREl = document.getElementById('autoSwitchAR');
+if (reachSliderEl) {
+  reachSliderEl.addEventListener('input', () => {
+    settings.buildRange = +reachSliderEl.value / 10;
+    reachValEl.textContent = settings.buildRange.toFixed(1);
+    saveSettings();
+  });
+}
+if (autoSwitchAREl) {
+  autoSwitchAREl.addEventListener('change', () => {
+    settings.autoSwitchAR = autoSwitchAREl.checked;
+    saveSettings();
+  });
+}
+
+// Keybind UI wiring
+document.querySelectorAll('.keybind').forEach((btn) => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    startRebind(btn.dataset.bind, btn);
+  });
+});
+
 applySettings();
 syncSettingsUI();
+syncHotkeyChips();
 
 // ---------- START ----------
 playBtn.addEventListener('click', () => {

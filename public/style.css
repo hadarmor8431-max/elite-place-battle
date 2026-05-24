@@ -703,3 +703,50 @@ body.touch .touchOnly { display: block; }
   gap: 12px;
   margin-top: 24px;
 }
+
+.settingsBox {
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.sectionDivider {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  color: #6bb7ff;
+  margin: 22px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #1f2a44;
+}
+
+.keyBindings {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  margin-top: 4px;
+}
+.kbRow { display: contents; }
+.kbRow > span {
+  color: #c5d3e8;
+  font-size: 13px;
+  align-self: center;
+}
+.kbRow > .keybind {
+  background: #0c1426;
+  border: 1px solid #2a3a5e;
+  color: #6bb7ff;
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 13px;
+  min-width: 70px;
+  transition: background 0.15s, color 0.15s;
+}
+.kbRow > .keybind:hover { background: #18253f; }
+.kbRow > .keybind.rebinding {
+  background: #2a3a5e;
+  color: #fff;
+  border-color: #6bb7ff;
+}

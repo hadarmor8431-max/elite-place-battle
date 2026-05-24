@@ -147,6 +147,29 @@
           <label class="toggle"><input type="checkbox" id="leftShoulder" /> Left-shoulder camera</label>
         </div>
 
+        <div class="sectionDivider">BUILDING</div>
+
+        <div class="setting">
+          <div class="settingLabel">Build Reach <span id="reachVal">5.0</span>m</div>
+          <input type="range" id="reachSlider" min="30" max="100" value="50" />
+        </div>
+
+        <div class="setting toggleRow">
+          <label class="toggle"><input type="checkbox" id="autoSwitchAR" /> Auto-switch to AR after placing</label>
+        </div>
+
+        <div class="sectionDivider">KEY BINDINGS</div>
+
+        <div class="keyBindings">
+          <div class="kbRow"><span>Weapon AR</span><button class="keybind" data-bind="weaponAR">1</button></div>
+          <div class="kbRow"><span>Weapon Pump</span><button class="keybind" data-bind="weaponPump">2</button></div>
+          <div class="kbRow"><span>Weapon Sniper</span><button class="keybind" data-bind="weaponSniper">3</button></div>
+          <div class="kbRow"><span>Build Wall</span><button class="keybind" data-bind="buildWall">Z</button></div>
+          <div class="kbRow"><span>Build Floor</span><button class="keybind" data-bind="buildFloor">X</button></div>
+          <div class="kbRow"><span>Build Ramp</span><button class="keybind" data-bind="buildRamp">C</button></div>
+          <div class="kbRow"><span>Edit Piece</span><button class="keybind" data-bind="editPiece">G</button></div>
+        </div>
+
         <div class="settingsActions">
           <button class="menuBtn small" data-act="reset">RESET DEFAULTS</button>
           <button class="menuBtn small primary" data-act="back">BACK</button>
