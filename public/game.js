@@ -711,7 +711,7 @@ function spawnShotEffect(msg, isMine) {
     const d = Math.hypot(cam.x - gunX, cam.y - gunY, cam.z - gunZ);
     vol = Math.max(0.05, Math.min(0.7, 10 / (10 + d * 0.6)));
   }
-  playGunshot(vol, w.pitch);
+  playWeaponSound(msg.weapon, vol);
 }
 
 // ---------- DAMAGE NUMBERS ----------
@@ -809,54 +809,169 @@ function ensureAudio() {
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }
 
-function playGunshot(volume = 1.0, pitch = 1.0) {
+// ---- Per-weapon synthesized gunshot sounds ----
+
+function _noiseBuffer(durSec, decaySec) {
+  const sr = audioCtx.sampleRate;
+  const n = Math.floor(sr * durSec);
+  const buf = audioCtx.createBuffer(1, n, sr);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) {
+    data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sr * decaySec));
+  }
+  return buf;
+}
+
+function playARShot(volume = 1.0) {
+  volume *= settings.volume;
+  if (!audioCtx || volume <= 0.005) return;
+  const now = audioCtx.currentTime;
+  // Snappy mid-range crack
+  const src = audioCtx.createBufferSource();
+  src.buffer = _noiseBuffer(0.18, 0.035);
+  const bp = audioCtx.createBiquadFilter();
+  bp.type = 'bandpass'; bp.frequency.value = 1500; bp.Q.value = 0.6;
+  const g = audioCtx.createGain(); g.gain.value = 0.55 * volume;
+  src.connect(bp).connect(g).connect(audioCtx.destination);
+  src.start(now);
+  // Sub-bass
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(180, now);
+  osc.frequency.exponentialRampToValueAtTime(50, now + 0.09);
+  const og = audioCtx.createGain();
+  og.gain.setValueAtTime(0.5 * volume, now);
+  og.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  osc.connect(og).connect(audioCtx.destination);
+  osc.start(now); osc.stop(now + 0.14);
+  // High crack
+  const cr = audioCtx.createOscillator();
+  cr.type = 'sawtooth';
+  cr.frequency.setValueAtTime(2800, now);
+  cr.frequency.exponentialRampToValueAtTime(900, now + 0.04);
+  const cg = audioCtx.createGain();
+  cg.gain.setValueAtTime(0.18 * volume, now);
+  cg.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+  cr.connect(cg).connect(audioCtx.destination);
+  cr.start(now); cr.stop(now + 0.06);
+}
+
+function playPumpShot(volume = 1.0) {
   volume *= settings.volume;
   if (!audioCtx || volume <= 0.005) return;
   const now = audioCtx.currentTime;
 
-  // Noise burst — main "bang" body
-  const noiseDur = 0.18;
-  const sampleCount = Math.floor(audioCtx.sampleRate * noiseDur);
-  const noiseBuf = audioCtx.createBuffer(1, sampleCount, audioCtx.sampleRate);
-  const ndata = noiseBuf.getChannelData(0);
-  for (let i = 0; i < sampleCount; i++) {
-    const env = Math.exp(-i / (audioCtx.sampleRate * 0.035));
-    ndata[i] = (Math.random() * 2 - 1) * env;
-  }
-  const noiseSrc = audioCtx.createBufferSource();
-  noiseSrc.buffer = noiseBuf;
-  const noiseFilter = audioCtx.createBiquadFilter();
-  noiseFilter.type = 'bandpass';
-  noiseFilter.frequency.value = 1400 * pitch;
-  noiseFilter.Q.value = 0.6;
-  const noiseGain = audioCtx.createGain();
-  noiseGain.gain.value = 0.55 * volume;
-  noiseSrc.connect(noiseFilter).connect(noiseGain).connect(audioCtx.destination);
-  noiseSrc.start(now);
+  // 1. Heavy WHOOMPH - dense low-passed noise (main body of shotgun blast)
+  const blast = audioCtx.createBufferSource();
+  blast.buffer = _noiseBuffer(0.3, 0.07);
+  const blastLP = audioCtx.createBiquadFilter();
+  blastLP.type = 'lowpass'; blastLP.frequency.value = 950; blastLP.Q.value = 0.7;
+  const blastGain = audioCtx.createGain();
+  blastGain.gain.setValueAtTime(0.95 * volume, now);
+  blastGain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+  blast.connect(blastLP).connect(blastGain).connect(audioCtx.destination);
+  blast.start(now);
 
-  // Sub-bass thump
-  const osc = audioCtx.createOscillator();
-  osc.type = 'sine';
-  osc.frequency.setValueAtTime(160 * pitch, now);
-  osc.frequency.exponentialRampToValueAtTime(45 * pitch, now + 0.1);
-  const oscGain = audioCtx.createGain();
-  oscGain.gain.setValueAtTime(0.55 * volume, now);
-  oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.13);
-  osc.connect(oscGain).connect(audioCtx.destination);
-  osc.start(now);
-  osc.stop(now + 0.15);
+  // 2. Sub-PUNCH - deep sine slam
+  const punch = audioCtx.createOscillator();
+  punch.type = 'sine';
+  punch.frequency.setValueAtTime(140, now);
+  punch.frequency.exponentialRampToValueAtTime(28, now + 0.09);
+  const punchGain = audioCtx.createGain();
+  punchGain.gain.setValueAtTime(1.0 * volume, now);
+  punchGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+  punch.connect(punchGain).connect(audioCtx.destination);
+  punch.start(now); punch.stop(now + 0.2);
 
-  // High-frequency crack
-  const crack = audioCtx.createOscillator();
-  crack.type = 'sawtooth';
-  crack.frequency.setValueAtTime(2800 * pitch, now);
-  crack.frequency.exponentialRampToValueAtTime(800 * pitch, now + 0.04);
+  // 3. Body grit - distorted saw for the metallic boom
+  const body = audioCtx.createOscillator();
+  body.type = 'square';
+  body.frequency.setValueAtTime(90, now);
+  body.frequency.exponentialRampToValueAtTime(55, now + 0.08);
+  const bodyGain = audioCtx.createGain();
+  bodyGain.gain.setValueAtTime(0.35 * volume, now);
+  bodyGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  const bodyLP = audioCtx.createBiquadFilter();
+  bodyLP.type = 'lowpass'; bodyLP.frequency.value = 400;
+  body.connect(bodyLP).connect(bodyGain).connect(audioCtx.destination);
+  body.start(now); body.stop(now + 0.14);
+
+  // 4. Mechanical click for the "pump" action ~0.18s after
+  const click = audioCtx.createBufferSource();
+  click.buffer = _noiseBuffer(0.04, 0.005);
+  const clickHP = audioCtx.createBiquadFilter();
+  clickHP.type = 'highpass'; clickHP.frequency.value = 3500;
+  const clickGain = audioCtx.createGain();
+  clickGain.gain.value = 0.15 * volume;
+  click.connect(clickHP).connect(clickGain).connect(audioCtx.destination);
+  click.start(now + 0.18);
+}
+
+function playSniperShot(volume = 1.0) {
+  volume *= settings.volume;
+  if (!audioCtx || volume <= 0.005) return;
+  const now = audioCtx.currentTime;
+
+  // 1. Ultra-sharp CRACK at attack - very brief but loud high-end
+  const crack = audioCtx.createBufferSource();
+  crack.buffer = _noiseBuffer(0.06, 0.006);
+  const crackHP = audioCtx.createBiquadFilter();
+  crackHP.type = 'highpass'; crackHP.frequency.value = 2800;
   const crackGain = audioCtx.createGain();
-  crackGain.gain.setValueAtTime(0.18 * volume, now);
-  crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-  crack.connect(crackGain).connect(audioCtx.destination);
+  crackGain.gain.setValueAtTime(0.85 * volume, now);
+  crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+  crack.connect(crackHP).connect(crackGain).connect(audioCtx.destination);
   crack.start(now);
-  crack.stop(now + 0.06);
+
+  // 2. Massive BOOM - deep sine drop, much lower than AR
+  const boom = audioCtx.createOscillator();
+  boom.type = 'sine';
+  boom.frequency.setValueAtTime(240, now);
+  boom.frequency.exponentialRampToValueAtTime(32, now + 0.14);
+  const boomGain = audioCtx.createGain();
+  boomGain.gain.setValueAtTime(1.0 * volume, now);
+  boomGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+  boom.connect(boomGain).connect(audioCtx.destination);
+  boom.start(now); boom.stop(now + 0.42);
+
+  // 3. Body of the bang - midrange noise burst
+  const bang = audioCtx.createBufferSource();
+  bang.buffer = _noiseBuffer(0.25, 0.05);
+  const bangBP = audioCtx.createBiquadFilter();
+  bangBP.type = 'bandpass'; bangBP.frequency.value = 1100; bangBP.Q.value = 0.8;
+  const bangGain = audioCtx.createGain();
+  bangGain.gain.setValueAtTime(0.5 * volume, now);
+  bangGain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+  bang.connect(bangBP).connect(bangGain).connect(audioCtx.destination);
+  bang.start(now);
+
+  // 4. LONG reverb-like tail with echo (signature sniper "shhhhhh" decay)
+  const tail = audioCtx.createBufferSource();
+  tail.buffer = _noiseBuffer(0.7, 0.18);
+  const tailLP = audioCtx.createBiquadFilter();
+  tailLP.type = 'lowpass'; tailLP.frequency.value = 800;
+  const tailGain = audioCtx.createGain();
+  tailGain.gain.setValueAtTime(0.001, now + 0.02);
+  tailGain.gain.exponentialRampToValueAtTime(0.45 * volume, now + 0.05);
+  tailGain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+  tail.connect(tailLP).connect(tailGain).connect(audioCtx.destination);
+  tail.start(now + 0.02);
+
+  // 5. Distant echo delay — simulates the gunshot bouncing back
+  const echoDelay = audioCtx.createDelay(1);
+  echoDelay.delayTime.value = 0.22;
+  const echoGain = audioCtx.createGain();
+  echoGain.gain.value = 0.45 * volume;
+  const echoLP = audioCtx.createBiquadFilter();
+  echoLP.type = 'lowpass'; echoLP.frequency.value = 500;
+  bangGain.connect(echoDelay).connect(echoLP).connect(echoGain).connect(audioCtx.destination);
+}
+
+// Dispatcher used by spawnShotEffect
+function playWeaponSound(weapon, volume = 1.0) {
+  if (weapon === 'sniper') return playSniperShot(volume);
+  if (weapon === 'pump')   return playPumpShot(volume);
+  return playARShot(volume);
 }
 
 // ---------- COLLISION (client-side prediction) ----------
