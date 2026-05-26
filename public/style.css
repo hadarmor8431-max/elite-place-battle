@@ -127,7 +127,9 @@ canvas#game {
 }
 
 #alive { color: #6bb7ff; }
+#killsHUD { color: #ff9a55; }
 #zoneInfo { color: #c084fc; }
+#zoneTimer { color: #ffd66b; font-weight: 800; }
 #status { color: #ffd66b; }
 
 #bottombar {
@@ -180,6 +182,72 @@ canvas#game {
   color: rgba(255, 255, 255, 0.7);
   text-shadow: 0 0 4px rgba(0,0,0,0.8);
   font-weight: 200;
+}
+
+#hitMarker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 32px;
+  height: 32px;
+  margin-top: -16px;
+  margin-left: -16px;
+  pointer-events: none;
+  opacity: 0;
+  background:
+    linear-gradient(135deg, transparent 45%, #fff 45%, #fff 55%, transparent 55%) 0 0/100% 100% no-repeat,
+    linear-gradient(45deg, transparent 45%, #fff 45%, #fff 55%, transparent 55%) 0 0/100% 100% no-repeat;
+  filter: drop-shadow(0 0 3px rgba(0,0,0,0.9));
+  z-index: 6;
+}
+#hitMarker.show {
+  animation: hitFlash 0.28s ease-out;
+}
+@keyframes hitFlash {
+  0% { opacity: 1; transform: scale(0.5); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+
+#damageIndicators {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 8;
+}
+.damageArrow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  opacity: 1;
+  transition: opacity 1.2s linear;
+}
+.damageArrow::after {
+  content: '';
+  position: absolute;
+  top: -180px;
+  left: -40px;
+  width: 80px;
+  height: 30px;
+  background: radial-gradient(ellipse at center top, rgba(255,40,40,0.85), rgba(255,40,40,0) 70%);
+  clip-path: polygon(50% 0%, 100% 80%, 0% 80%);
+}
+
+#spawnProtect {
+  position: absolute;
+  top: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(85, 220, 255, 0.18);
+  border: 1px solid rgba(85, 220, 255, 0.7);
+  color: #cef0ff;
+  font-weight: 800;
+  letter-spacing: 3px;
+  font-size: 13px;
+  padding: 6px 16px;
+  border-radius: 6px;
+  text-shadow: 0 0 6px rgba(85, 220, 255, 0.8);
 }
 
 /* ---------- SNIPER SCOPE ---------- */
@@ -303,14 +371,14 @@ body.scoped #crosshair { display: none; }
   transform: scale(1.08);
 }
 
-.weapon .cooldownBar {
+.weapon .cooldownOverlay {
   position: absolute;
   bottom: 0;
   left: 0;
-  height: 3px;
-  background: #6bb7ff;
-  width: 0%;
-  transition: width 0.05s linear;
+  right: 0;
+  background: rgba(10, 14, 26, 0.7);
+  pointer-events: none;
+  transition: height 0.05s linear;
 }
 
 /* ---------- TOUCH CONTROLS (mobile only) ---------- */

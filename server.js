@@ -21,6 +21,7 @@ const MAX_SHIELD = 100;
 const SHIELD_PER_POTION = 25;
 const POTION_COUNT = 30;
 const PICKUP_RADIUS = 1.8;
+const SPAWN_PROTECTION_MS = 3000;
 
 const app = express();
 // Disable caching so deploys are picked up immediately by clients
@@ -108,6 +109,7 @@ function startGame() {
   lastZoneDamage = Date.now();
   winnerInfo = null;
   potions = generatePotions();
+  const now = Date.now();
   for (const p of players.values()) {
     const pos = spawnPos();
     p.x = pos.x; p.y = pos.y; p.z = pos.z;
@@ -115,8 +117,10 @@ function startGame() {
     p.shield = 0;
     p.alive = true;
     p.rotY = 0;
+    p.kills = 0;
+    p.protectedUntil = now + SPAWN_PROTECTION_MS;
   }
-  broadcast({ type: 'gamestart', zone, obstacles, potions });
+  broadcast({ type: 'gamestart', zone, obstacles, potions, shrinkInterval: ZONE_SHRINK_INTERVAL_MS, spawnProtectionMs: SPAWN_PROTECTION_MS });
 }
 
 function generatePotions() {
@@ -182,7 +186,7 @@ function tick() {
       zone.cx += Math.cos(ang) * drift;
       zone.cz += Math.sin(ang) * drift;
       lastShrink = now;
-      broadcast({ type: 'zone', zone });
+      broadcast({ type: 'zone', zone, nextShrinkAt: now + ZONE_SHRINK_INTERVAL_MS });
     }
 
     // Zone damage every second
@@ -226,9 +230,9 @@ function tick() {
   // Broadcast state
   const snapshot = [];
   for (const [id, p] of players) {
-    snapshot.push({ id, name: p.name, x: p.x, y: p.y, z: p.z, rotY: p.rotY, hp: p.hp, shield: p.shield, alive: p.alive, weapon: p.currentWeapon });
+    snapshot.push({ id, name: p.name, x: p.x, y: p.y, z: p.z, rotY: p.rotY, hp: p.hp, shield: p.shield, alive: p.alive, weapon: p.currentWeapon, protectedUntil: p.protectedUntil });
   }
-  broadcast({ type: 'state', players: snapshot, t: now });
+  broadcast({ type: 'state', players: snapshot, t: now, nextShrinkAt: lastShrink + ZONE_SHRINK_INTERVAL_MS });
 }
 
 setInterval(tick, 1000 / TICK_RATE);
@@ -351,15 +355,21 @@ function handleShoot(shooterId, msg) {
   });
 
   // Apply accumulated damage (multiple pellets on one target = sum)
+  const now2 = Date.now();
   for (const [hitId, totalDmg] of damageByTarget) {
     const target = players.get(hitId);
+    // Spawn protection: ignore damage
+    if (target.protectedUntil > now2) {
+      send(shooter.ws, { type: 'dmg', amount: 0, blocked: true, targetId: hitId, x: target.x, y: target.y, z: target.z });
+      continue;
+    }
     const preShield = target.shield;
     const preHp = target.hp;
     applyDamage(target, totalDmg);
     const shieldDmg = preShield - target.shield;
     const hpDmg = preHp - target.hp;
-    send(target.ws, { type: 'hp', hp: target.hp, shield: target.shield, fromZone: false });
-    // Damage feedback for the shooter (floating numbers)
+    send(target.ws, { type: 'hp', hp: target.hp, shield: target.shield, fromZone: false, fromX: shooter.x, fromZ: shooter.z });
+    // Damage feedback for the shooter (floating numbers + hit marker)
     send(shooter.ws, {
       type: 'dmg',
       amount: shieldDmg + hpDmg,
@@ -368,7 +378,11 @@ function handleShoot(shooterId, msg) {
       targetId: hitId,
       x: target.x, y: target.y, z: target.z,
     });
-    if (target.hp <= 0) killPlayer(hitId, shooterId);
+    if (target.hp <= 0) {
+      shooter.kills = (shooter.kills || 0) + 1;
+      send(shooter.ws, { type: 'eliminated', kills: shooter.kills });
+      killPlayer(hitId, shooterId);
+    }
   }
 }
 
@@ -399,6 +413,8 @@ wss.on('connection', (ws) => {
     alive: false,
     lastShot: 0,
     currentWeapon: 'ar',
+    kills: 0,
+    protectedUntil: 0,
   };
   players.set(id, p);
 

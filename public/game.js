@@ -18,6 +18,11 @@ const winOverlay = document.getElementById('winOverlay');
 const winSub = document.getElementById('winSub');
 const minimapCanvas = document.getElementById('minimapCanvas');
 const minimapCtx = minimapCanvas.getContext('2d');
+const killsHUD = document.getElementById('killsHUD');
+const zoneTimer = document.getElementById('zoneTimer');
+const hitMarker = document.getElementById('hitMarker');
+const damageIndicators = document.getElementById('damageIndicators');
+const spawnProtect = document.getElementById('spawnProtect');
 
 const savedName = localStorage.getItem('brName');
 if (savedName) nameInput.value = savedName;
@@ -405,7 +410,10 @@ const me = {
   shield: 0,
   alive: false,
   pitch: 0,
+  kills: 0,
+  protectedUntil: 0,
 };
+let nextShrinkAt = 0;
 
 const otherPlayers = new Map(); // id -> {mesh, x, y, z, rotY, targetX, targetY, targetZ, targetRot, name, hp, alive}
 let zone = { cx: 0, cz: 0, r: 100 };
@@ -914,14 +922,30 @@ function handleMsg(msg) {
   } else if (msg.type === 'state') {
     updateFromState(msg.players);
   } else if (msg.type === 'hp') {
+    const prevHp = me.hp, prevShield = me.shield;
     me.hp = msg.hp;
     if (typeof msg.shield === 'number') me.shield = msg.shield;
     updateHpUI();
     if (msg.fromZone) statusEl.textContent = 'Outside zone! Move in.';
+    // If shield went UP and not from zone, it's a pickup
+    if (!msg.fromZone && me.shield > prevShield) {
+      spawnDamageNumber(me.x, me.y, me.z, `+${me.shield - prevShield}`, me.shield - prevShield, 0);
+    }
+    // If hp/shield went down and we know the shooter direction, show damage arrow
+    if ((me.hp < prevHp || me.shield < prevShield) && typeof msg.fromX === 'number') {
+      spawnDamageArrow(msg.fromX, msg.fromZ);
+    }
   } else if (msg.type === 'pickup') {
     removePotion(msg.potionId);
   } else if (msg.type === 'dmg') {
-    spawnDamageNumber(msg.x, msg.y, msg.z, msg.amount, msg.shieldDmg || 0, msg.hpDmg || 0);
+    if (!msg.blocked) {
+      spawnDamageNumber(msg.x, msg.y, msg.z, msg.amount, msg.shieldDmg || 0, msg.hpDmg || 0);
+      flashHitMarker();
+    }
+  } else if (msg.type === 'eliminated') {
+    me.kills = msg.kills;
+    if (killsHUD) killsHUD.textContent = `Kills: ${me.kills}`;
+    playKillSound();
   } else if (msg.type === 'shot') {
     spawnShotEffect(msg, msg.shooterId === me.id);
   } else if (msg.type === 'kill') {
@@ -937,6 +961,7 @@ function handleMsg(msg) {
     }
   } else if (msg.type === 'zone') {
     zone = msg.zone;
+    if (msg.nextShrinkAt) nextShrinkAt = msg.nextShrinkAt;
     updateZoneMesh();
     statusEl.textContent = 'Zone shrinking!';
     setTimeout(() => { if (statusEl.textContent === 'Zone shrinking!') statusEl.textContent = ''; }, 3000);
@@ -948,6 +973,10 @@ function handleMsg(msg) {
     me.alive = true;
     me.hp = 100;
     me.shield = 0;
+    me.kills = 0;
+    if (killsHUD) killsHUD.textContent = 'Kills: 0';
+    if (msg.spawnProtectionMs) me.protectedUntil = Date.now() + msg.spawnProtectionMs;
+    if (msg.shrinkInterval) nextShrinkAt = Date.now() + msg.shrinkInterval;
     updateScope();
     clearAllPotions();
     if (msg.potions) {
@@ -992,6 +1021,7 @@ function updateFromState(playersArr) {
         me.shield = sh;
         updateHpUI();
       }
+      if (typeof p.protectedUntil === 'number') me.protectedUntil = p.protectedUntil;
       // Server may have respawned us
       if (p.alive && !me.alive) {
         me.alive = true;
@@ -1020,6 +1050,86 @@ function updateFromState(playersArr) {
     }
   }
   aliveEl.textContent = `Alive: ${aliveN}`;
+}
+
+// ---------- QoL helpers ----------
+function flashHitMarker() {
+  if (!hitMarker) return;
+  hitMarker.classList.remove('show');
+  // Force reflow so the animation restarts
+  void hitMarker.offsetWidth;
+  hitMarker.classList.add('show');
+}
+
+function spawnDamageArrow(fromX, fromZ) {
+  if (!damageIndicators) return;
+  const arrow = document.createElement('div');
+  arrow.className = 'damageArrow';
+  // Compute angle from player to attacker, relative to player's facing
+  const dx = fromX - me.x;
+  const dz = fromZ - me.z;
+  const worldAng = Math.atan2(dx, dz);
+  // Player faces -Z when rotY = 0 (so atan2(-sin(rotY), -cos(rotY)) = π + rotY)
+  // Angle relative to player's view: where on screen the source is
+  const rel = worldAng - me.rotY + Math.PI;
+  arrow.style.transform = `rotate(${rel}rad)`;
+  damageIndicators.appendChild(arrow);
+  // Trigger fade
+  requestAnimationFrame(() => { arrow.style.opacity = '0'; });
+  setTimeout(() => arrow.remove(), 1300);
+}
+
+function playKillSound() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const vol = settings.volume;
+  if (vol <= 0.01) return;
+  // Two-note "ping" - high crisp tone descending slightly
+  for (let i = 0; i < 2; i++) {
+    const osc = audioCtx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = i === 0 ? 880 : 1320;
+    const g = audioCtx.createGain();
+    g.gain.setValueAtTime(0.0001, now + i * 0.08);
+    g.gain.exponentialRampToValueAtTime(0.25 * vol, now + i * 0.08 + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, now + i * 0.08 + 0.18);
+    osc.connect(g).connect(audioCtx.destination);
+    osc.start(now + i * 0.08);
+    osc.stop(now + i * 0.08 + 0.2);
+  }
+}
+
+function updateWeaponCooldownUI() {
+  document.querySelectorAll('.weapon').forEach((el) => {
+    let overlay = el.querySelector('.cooldownOverlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.className = 'cooldownOverlay';
+      el.appendChild(overlay);
+    }
+    const wname = el.dataset.weapon;
+    if (wname !== currentWeapon) { overlay.style.height = '0%'; return; }
+    const w = WEAPONS[wname];
+    const elapsed = performance.now() - lastShotTime;
+    const pct = elapsed < w.cooldown ? 100 - (100 * elapsed / w.cooldown) : 0;
+    overlay.style.height = pct + '%';
+  });
+}
+
+function updateZoneTimer() {
+  if (!zoneTimer) return;
+  if (nextShrinkAt > 0) {
+    const sec = Math.max(0, Math.ceil((nextShrinkAt - Date.now()) / 1000));
+    zoneTimer.textContent = sec;
+  } else {
+    zoneTimer.textContent = '--';
+  }
+}
+
+function updateSpawnProtectUI() {
+  if (!spawnProtect) return;
+  const isProtected = me.alive && me.protectedUntil > Date.now();
+  spawnProtect.classList.toggle('hidden', !isProtected);
 }
 
 function updateZoneMesh() {
@@ -1281,6 +1391,9 @@ function loop() {
   updateEffects(dt);
   updateDamageNumbers(dt);
   animatePotions(clock.elapsedTime);
+  updateWeaponCooldownUI();
+  updateZoneTimer();
+  updateSpawnProtectUI();
   drawMinimap();
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
