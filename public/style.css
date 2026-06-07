@@ -250,58 +250,6 @@ canvas#game {
   text-shadow: 0 0 6px rgba(85, 220, 255, 0.8);
 }
 
-/* ---------- LOBBY PANEL ---------- */
-#lobbyPanel {
-  position: absolute;
-  bottom: 28px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(15, 22, 40, 0.88);
-  border: 1px solid #2a3a5e;
-  border-radius: 12px;
-  padding: 16px 22px;
-  text-align: center;
-  pointer-events: auto;
-  display: none;
-  box-shadow: 0 0 30px rgba(80, 140, 255, 0.25);
-  backdrop-filter: blur(8px);
-  z-index: 14;
-}
-body.in-lobby #lobbyPanel { display: block; }
-
-.lobbyTitle {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  color: #8a9bb8;
-  margin-bottom: 10px;
-}
-
-#startMatchBtn {
-  background: linear-gradient(90deg, #4f8fff, #9b5bff);
-  color: #fff;
-  font-weight: 900;
-  font-size: 16px;
-  letter-spacing: 3px;
-  padding: 12px 32px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: transform 0.1s, filter 0.1s;
-}
-#startMatchBtn:hover { filter: brightness(1.15); }
-#startMatchBtn:active { transform: translateY(1px); }
-
-.lobbyHint {
-  font-size: 11px;
-  color: #6a7a96;
-  margin-top: 8px;
-}
-
-/* Hide zone info / spawn protect in lobby */
-body.in-lobby #zoneInfo,
-body.in-lobby #spawnProtect { display: none; }
-
 /* ---------- SNIPER SCOPE ---------- */
 #scopeOverlay {
   position: absolute;

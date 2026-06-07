@@ -12,20 +12,16 @@ const WEAPONS = {
   pump:   { dmg: 15,  cooldown: 800,  range: 22,  pellets: 10, spread: 0.09  },
   sniper: { dmg: 100, cooldown: 1400, range: 250                             },
 };
-const MAP_SIZE = 500;
+const MAP_SIZE = 200;
 const ZONE_DAMAGE_PER_SEC = 5;
 const ZONE_SHRINK_INTERVAL_MS = 30000;
-const ZONE_SHRINK_FACTOR = 0.65;
-const MIN_ZONE_RADIUS = 12;
+const ZONE_SHRINK_FACTOR = 0.6;
+const MIN_ZONE_RADIUS = 8;
 const MAX_SHIELD = 100;
 const SHIELD_PER_POTION = 25;
-const POTION_COUNT = 80;
+const POTION_COUNT = 30;
 const PICKUP_RADIUS = 1.8;
 const SPAWN_PROTECTION_MS = 3000;
-
-// Lobby
-const LOBBY_CENTER = { x: -210, z: -210 };
-const LOBBY_SIZE = 40; // half-extent
 
 const app = express();
 // Disable caching so deploys are picked up immediately by clients
@@ -42,7 +38,7 @@ const players = new Map(); // id -> {ws, name, x,y,z, rotY, hp, alive, lastSeen}
 const obstacles = generateObstacles();
 
 let nextId = 1;
-let gameState = 'lobby'; // lobby | playing | ended
+let gameState = 'waiting'; // waiting | playing | ended
 let zone = { cx: 0, cz: 0, r: MAP_SIZE / 2 };
 let potions = []; // {id, x, z}
 let nextPotionId = 1;
@@ -61,29 +57,20 @@ function generateObstacles() {
     s = (s * 9301 + 49297) % 233280;
     return s / 233280;
   };
-  for (let i = 0; i < 100; i++) {
-    const w = 4 + rng() * 10;
-    const h = 3 + rng() * 10;
-    const d = 4 + rng() * 10;
+  for (let i = 0; i < 40; i++) {
+    const w = 4 + rng() * 8;
+    const h = 3 + rng() * 8;
+    const d = 4 + rng() * 8;
     const x = (rng() - 0.5) * (MAP_SIZE - 20);
     const z = (rng() - 0.5) * (MAP_SIZE - 20);
-    // Skip if too close to lobby
-    if (Math.hypot(x - LOBBY_CENTER.x, z - LOBBY_CENTER.z) < LOBBY_SIZE + 10) continue;
     obs.push({ x, y: h / 2, z, w, h, d });
   }
   // Trees
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < 60; i++) {
     const x = (rng() - 0.5) * (MAP_SIZE - 10);
     const z = (rng() - 0.5) * (MAP_SIZE - 10);
-    if (Math.hypot(x - LOBBY_CENTER.x, z - LOBBY_CENTER.z) < LOBBY_SIZE + 6) continue;
     obs.push({ x, y: 3, z, w: 1.5, h: 6, d: 1.5, tree: true });
   }
-  // Lobby walls (4 walls around the lobby area)
-  const lc = LOBBY_CENTER, ls = LOBBY_SIZE;
-  obs.push({ x: lc.x,        y: 2, z: lc.z - ls, w: ls * 2 + 2, h: 4, d: 2, lobby: true });
-  obs.push({ x: lc.x,        y: 2, z: lc.z + ls, w: ls * 2 + 2, h: 4, d: 2, lobby: true });
-  obs.push({ x: lc.x - ls,   y: 2, z: lc.z,      w: 2, h: 4, d: ls * 2 + 2, lobby: true });
-  obs.push({ x: lc.x + ls,   y: 2, z: lc.z,      w: 2, h: 4, d: ls * 2 + 2, lobby: true });
   return obs;
 }
 
@@ -106,16 +93,6 @@ function spawnPos() {
     x: zone.cx + Math.cos(angle) * r,
     y: 0,
     z: zone.cz + Math.sin(angle) * r,
-  };
-}
-
-function lobbySpawnPos() {
-  const angle = Math.random() * Math.PI * 2;
-  const r = Math.random() * (LOBBY_SIZE - 5);
-  return {
-    x: LOBBY_CENTER.x + Math.cos(angle) * r,
-    y: 0,
-    z: LOBBY_CENTER.z + Math.sin(angle) * r,
   };
 }
 
@@ -184,29 +161,19 @@ function endGame(winnerId) {
   broadcast({ type: 'gameover', winner: winnerInfo });
 }
 
-function returnToLobby() {
-  gameState = 'lobby';
-  winnerInfo = null;
-  for (const p of players.values()) {
-    const pos = lobbySpawnPos();
-    p.x = pos.x; p.y = pos.y; p.z = pos.z;
-    p.hp = MAX_HP;
-    p.shield = 0;
-    p.alive = true;
-    p.kills = 0;
-    p.protectedUntil = 0;
-  }
-  broadcast({ type: 'lobby', center: LOBBY_CENTER, size: LOBBY_SIZE });
-}
-
 function tick() {
   const now = Date.now();
   const dt = (now - lastTick) / 1000;
   lastTick = now;
 
-  // After a round ends, return everyone to the lobby
-  if (gameState === 'ended' && now - gameEndTime > 5000) {
-    returnToLobby();
+  if (gameState === 'waiting' && players.size >= 1) {
+    // Auto start after 5 seconds when at least 1 player connected
+    startGame();
+  }
+
+  if (gameState === 'ended' && now - gameEndTime > 8000) {
+    if (players.size >= 1) startGame();
+    else gameState = 'waiting';
   }
 
   if (gameState === 'playing') {
@@ -336,8 +303,7 @@ function applySpread(dx, dy, dz, spread) {
 
 function handleShoot(shooterId, msg) {
   const shooter = players.get(shooterId);
-  if (!shooter || !shooter.alive) return;
-  // In lobby, allow visual shots but no damage will be applied (see below)
+  if (!shooter || !shooter.alive || gameState !== 'playing') return;
   const wname = (msg.weapon && WEAPONS[msg.weapon]) ? msg.weapon : 'ar';
   const w = WEAPONS[wname];
   const now = Date.now();
@@ -387,9 +353,6 @@ function handleShoot(shooterId, msg) {
     srotY: shooter.rotY,
     pellets: pelletResults,
   });
-
-  // No damage applied while in lobby
-  if (gameState !== 'playing') return;
 
   // Apply accumulated damage (multiple pellets on one target = sum)
   const now2 = Date.now();
@@ -464,8 +427,6 @@ wss.on('connection', (ws) => {
     mapSize: MAP_SIZE,
     gameState,
     winner: winnerInfo,
-    lobbyCenter: LOBBY_CENTER,
-    lobbySize: LOBBY_SIZE,
   });
 
   ws.on('message', (raw) => {
@@ -476,15 +437,17 @@ wss.on('connection', (ws) => {
 
     if (msg.type === 'join') {
       player.name = String(msg.name || '').slice(0, 16) || 'Player' + id;
-      // Always spawn somewhere alive
-      const pos = (gameState === 'playing') ? spawnPos() : lobbySpawnPos();
-      player.x = pos.x; player.y = pos.y; player.z = pos.z;
-      player.hp = MAX_HP;
-      player.shield = 0;
-      player.alive = true;
+      if (gameState === 'playing' || gameState === 'waiting') {
+        // Join in progress: spawn alive if game already started, otherwise wait for next round
+        if (gameState === 'playing') {
+          const pos = spawnPos();
+          player.x = pos.x; player.y = pos.y; player.z = pos.z;
+          player.hp = MAX_HP;
+          player.shield = 0;
+          player.alive = true;
+        }
+      }
       broadcast({ type: 'joined', id, name: player.name });
-    } else if (msg.type === 'startMatch') {
-      if (gameState === 'lobby') startGame();
     } else if (msg.type === 'move') {
       if (!player.alive) return;
       // Clamp to map
@@ -507,5 +470,5 @@ wss.on('connection', (ws) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Skyzone listening on port ${PORT}`);
+  console.log(`Elite Place Battle listening on port ${PORT}`);
 });

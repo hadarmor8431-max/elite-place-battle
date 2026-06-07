@@ -23,7 +23,6 @@ const zoneTimer = document.getElementById('zoneTimer');
 const hitMarker = document.getElementById('hitMarker');
 const damageIndicators = document.getElementById('damageIndicators');
 const spawnProtect = document.getElementById('spawnProtect');
-const startMatchBtn = document.getElementById('startMatchBtn');
 
 const savedName = localStorage.getItem('brName');
 if (savedName) nameInput.value = savedName;
@@ -96,7 +95,7 @@ renderer.shadowMap.enabled = false;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 120, 450);
+scene.fog = new THREE.Fog(0x87ceeb, 60, 220);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 500);
 
@@ -108,18 +107,18 @@ sun.position.set(60, 100, 40);
 scene.add(sun);
 
 // Ground
-const MAP_SIZE = 500;
-const groundGeom = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, 50, 50);
+const MAP_SIZE = 200;
+const groundGeom = new THREE.PlaneGeometry(MAP_SIZE, MAP_SIZE, 20, 20);
 const groundMat = new THREE.MeshLambertMaterial({ color: 0x4a8b4a });
 const ground = new THREE.Mesh(groundGeom, groundMat);
 ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
 
 // Grid for orientation
-const grid = new THREE.GridHelper(MAP_SIZE, 100, 0x336633, 0x336633);
+const grid = new THREE.GridHelper(MAP_SIZE, 40, 0x336633, 0x336633);
 grid.position.y = 0.01;
 grid.material.transparent = true;
-grid.material.opacity = 0.25;
+grid.material.opacity = 0.3;
 scene.add(grid);
 
 // Zone visualization (vertical cylinder)
@@ -1027,7 +1026,6 @@ function handleMsg(msg) {
     zone = msg.zone;
     updateZoneMesh();
     gameState = msg.gameState;
-    setLobbyUI(gameState === 'lobby');
     if (!myMesh) {
       myMesh = makePlayerMesh(colorFor(me.id), '');
       scene.add(myMesh);
@@ -1036,11 +1034,6 @@ function handleMsg(msg) {
     if (msg.potions) {
       for (const p of msg.potions) spawnPotion(p.id, p.x, p.z);
     }
-  } else if (msg.type === 'lobby') {
-    gameState = 'lobby';
-    setLobbyUI(true);
-    statusEl.textContent = 'Returned to lobby';
-    setTimeout(() => { if (statusEl.textContent === 'Returned to lobby') statusEl.textContent = ''; }, 3000);
   } else if (msg.type === 'state') {
     updateFromState(msg.players);
   } else if (msg.type === 'hp') {
@@ -1092,7 +1085,6 @@ function handleMsg(msg) {
     if (msg.obstacles) buildObstacles(msg.obstacles);
     updateZoneMesh();
     gameState = 'playing';
-    setLobbyUI(false);
     me.alive = true;
     me.hp = 100;
     me.shield = 0;
@@ -1261,12 +1253,6 @@ function updateZoneMesh() {
   zoneMesh.scale.x = zone.r / 100;
   zoneMesh.scale.z = zone.r / 100;
   zoneREl.textContent = Math.round(zone.r);
-  zoneMesh.visible = (gameState === 'playing');
-}
-
-function setLobbyUI(inLobby) {
-  document.body.classList.toggle('in-lobby', !!inLobby);
-  zoneMesh.visible = !inLobby;
 }
 
 function updateHpUI() {
@@ -1689,13 +1675,6 @@ syncSettingsUI();
 syncHotkeyChips();
 
 // ---------- START ----------
-if (startMatchBtn) {
-  startMatchBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'startMatch' }));
-  });
-}
-
 playBtn.addEventListener('click', () => {
   const n = (nameInput.value || '').trim().slice(0, 16) || 'Player';
   me.name = n;
